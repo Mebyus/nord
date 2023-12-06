@@ -23,16 +23,16 @@ fn void copy(u8* src, u8* dst, usz n) noexcept {
 
 struct termios original_terminal_state;
 
-fn void fatal(const char* s);
+fn void fatal(const char* s) noexcept;
 
-fn internal void exit_raw_mode() {
+fn internal void exit_raw_mode() noexcept {
   i32 rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal_state);
   if (rcode < 0) {
     fatal("failed to exit raw mode\r\n");
   }
 }
 
-fn internal void enter_raw_mode() {
+fn internal void enter_raw_mode() noexcept {
   i32 rcode = tcgetattr(STDIN_FILENO, &original_terminal_state);
   if (rcode < 0) {
     fatal("failed to get current terminal state\n");
@@ -56,7 +56,7 @@ fn internal void enter_raw_mode() {
   atexit(exit_raw_mode);
 }
 
-fn internal struct winsize get_viewport_size() {
+fn internal struct winsize get_viewport_size() noexcept {
   struct winsize ws;
   i32 rcode = ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
   if (rcode < 0 || ws.ws_col == 0) {
@@ -66,7 +66,7 @@ fn internal struct winsize get_viewport_size() {
   return ws;
 }
 
-fn internal void stdout_write(mc c) {
+fn internal void stdout_write(mc c) noexcept {
   const i32 stdout_fd = 1;
 
   var u8* ptr = c.ptr;
@@ -83,17 +83,17 @@ fn internal void stdout_write(mc c) {
 }
 
 struct CommandBuffer {
-  bs s;
+  bb s;
 
-  ctr CommandBuffer() noexcept {}
+  con CommandBuffer() noexcept {}
 
-  ctr CommandBuffer(usz initial_size) noexcept {
+  con CommandBuffer(usz initial_size) noexcept {
     var u8* bytes = (u8*)malloc(initial_size);
     if (bytes == nil) {
       fatal("failed to allocate memory for command buffer\r\n");
     }
 
-    s = bs(bytes, initial_size);
+    s = bb(bytes, initial_size);
   }
 
   method void write(mc c) noexcept {
@@ -109,6 +109,7 @@ struct CommandBuffer {
     } else {
       new_cap = s.cap + c.len + (s.cap >> 1);
     }
+
     var u8* bytes = (u8*)realloc(s.ptr, new_cap);
     if (bytes == nil) {
       fatal("failed to grow memory for command buffer\r\n");
@@ -135,7 +136,7 @@ struct Editor {
   u32 rows_num;
   u32 cols_num;
 
-  ctr Editor() noexcept {}
+  con Editor() noexcept {}
 
   method void init() noexcept {
     enter_raw_mode();
@@ -173,14 +174,14 @@ struct Editor {
 
 var Editor e;
 
-fn void fatal(const char* s) {
+fn void fatal(const char* s) noexcept {
   e.clear_window();
 
   perror(s);
   exit(1);
 }
 
-fn internal u8 read_key_input() {
+fn internal u8 read_key_input() noexcept {
   while (true) {
     u8 c = 0;
     isz num_bytes_read = read(STDIN_FILENO, &c, 1);
@@ -200,14 +201,14 @@ fn internal u8 read_key_input() {
   return 0;
 }
 
-fn internal void handle_key_input(u8 c) {
+fn internal void handle_key_input(u8 c) noexcept {
   if (c == CTRL_KEY('q')) {
     e.clear_window();
     exit(0);
   }
 }
 
-fn i32 main() {
+fn i32 main() noexcept {
   e.init();
 
   while (true) {

@@ -30,10 +30,10 @@
 #define method
 
 // Mark struct or class constructor
-#define ctr
+#define con
 
 // Mark struct or class destructor
-#define dtr ~
+#define des ~
 
 // Macro to compute chunk size in bytes to hold n elements of type T
 #define chunk_size(T, n) ((n) * sizeof(T))
@@ -106,9 +106,9 @@ struct mc {
   usz len;
 
   // Create nil memory chunk
-  ctr mc() noexcept : ptr(nil), len(0) {}
+  con mc() noexcept : ptr(nil), len(0) {}
 
-  ctr mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
+  con mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
 
   // Fill chunk with zero bytes
   method void zero() noexcept;
@@ -116,7 +116,7 @@ struct mc {
   // Fill chunk with specified byte
   method void fill(u8 x) noexcept;
 
-  // Parameters must satisfy 0 <= start <= end <= n
+  // Parameters must satisfy 0 <= start <= end <= len
   //
   // Method does not perform any safety checks
   //
@@ -337,7 +337,7 @@ method usz mc::format_bin_delim(u32 x) noexcept {
   return l;
 }
 
-// Bytes Slice
+// Bytes Buffer
 //
 // Accumulates multiple writes into single continuous memory region.
 // Slice has capacity i.e. maximum number of bytes it can hold. After
@@ -345,16 +345,16 @@ method usz mc::format_bin_delim(u32 x) noexcept {
 // will write nothing and always return 0, until reset() is called
 //
 // Slice is much alike memory chunk in terms of memory ownership
-struct bs {
+struct bb {
   u8* ptr;
   usz len;
   usz cap;
 
-  ctr bs() noexcept : ptr(nil), len(0), cap(0) {}
+  con bb() noexcept : ptr(nil), len(0), cap(0) {}
 
-  ctr bs(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
+  con bb(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
 
-  ctr bs(u8* bytes, usz n) noexcept : ptr(bytes), len(0), cap(n) {}
+  con bb(u8* bytes, usz n) noexcept : ptr(bytes), len(0), cap(n) {}
 
   method bool is_empty() noexcept { return len == 0; }
 

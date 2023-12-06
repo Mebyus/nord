@@ -18,10 +18,11 @@ CPPFLAGS = -MMD -MP -MF
 
 # Compiler warnings
 WARNINGS = -Wall -Wextra -Wconversion -Wunreachable-code -Wshadow -Wundef -Wfloat-equal -Wformat=2 \
--Wpointer-arith -Winit-self -Wduplicated-branches -Wduplicated-cond -Wnull-dereference -Wswitch-enum -Wvla
+-Wpointer-arith -Winit-self -Wduplicated-branches -Wduplicated-cond -Wnull-dereference -Wswitch-enum -Wvla \
+-Wnoexcept
 
 # Compiler code generation conventions flags
-GENFLAGS = -fwrapv
+GENFLAGS = -fwrapv -fno-exceptions
 
 ifeq (${BUILD_KIND}, debug)
 	BIN_DIR = bin/debug
@@ -53,7 +54,7 @@ ${CACHE_DIR}:
 ${BIN_PATH}: ${CACHE_DIR}/main.o
 	${CC} -o $@ $^
 
-${CACHE_DIR}/main.o: src/main.cpp
+${CACHE_DIR}/main.o: src/main.cpp makefile
 	${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/main.d
 
