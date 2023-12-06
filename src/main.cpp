@@ -82,7 +82,11 @@ fn internal void stdout_write(mc c) noexcept {
   }
 }
 
+#define COMMAND_SKETCH_BUFFER_SIZE 32
+
 struct CommandBuffer {
+  u8 sketch_buf[COMMAND_SKETCH_BUFFER_SIZE];
+
   bb s;
 
   con CommandBuffer() noexcept {}
@@ -120,6 +124,19 @@ struct CommandBuffer {
     s.unsafe_write(c);
   }
 
+  method void change_cursor_position(u32 x, u32 y) noexcept {
+    // prepare command string
+    bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+    buf.unsafe_write(str("\x1b["));
+    buf.format_dec(y + 1);
+    buf.unsafe_write(cast(u8, ';'));
+    buf.format_dec(x + 1);
+    buf.unsafe_write(cast(u8, 'H'));
+
+    // write prepared command to buffer
+    write(buf.chunk());
+  }
+
   method void reset() noexcept { s.reset(); }
 
   method void flush() noexcept {
@@ -131,14 +148,30 @@ struct CommandBuffer {
 #define COMMAND_BUFFER_INITIAL_SIZE 1 << 14
 
 struct Editor {
+  enum struct Key : u8 {
+    ESC,
+    LEFT,
+    RIGHT,
+    UP,
+    DOWN,
+  };
+
   CommandBuffer cmd_buf;
 
+  // cursor position, originating from top-left corner
+  u32 cx;
+  u32 cy;
+
+  // terminal screen sizes
   u32 rows_num;
   u32 cols_num;
 
   con Editor() noexcept {}
 
   method void init() noexcept {
+    cx = 0;
+    cy = 0;
+
     enter_raw_mode();
 
     cmd_buf = CommandBuffer(COMMAND_BUFFER_INITIAL_SIZE);
@@ -149,7 +182,11 @@ struct Editor {
     rows_num = cast(u32, ws.ws_row);
     cols_num = cast(u32, ws.ws_col);
 
+    cmd_buf.write(str("\x1b[?25l"));  // hide cursor
     draw_test();
+    cmd_buf.write(str("\x1b[?25h"));  // show cursor
+    update_cursor_position();
+    cmd_buf.flush();
   }
 
   method void draw_test() noexcept {
@@ -159,14 +196,58 @@ struct Editor {
     }
     cmd_buf.write(str("#"));
 
+    var dirty u8 s[32];
+    var bb buf = bb(s, 32);
+    buf.write(str("   cols = "));
+    buf.format_dec(cols_num);
+    buf.write(str(", rows = "));
+    buf.format_dec(rows_num);
+    cmd_buf.write(buf.chunk());
+  }
+
+  method void move_cursor_right() noexcept {
+    if (cx >= cols_num - 1) {
+      return;
+    }
+    cx += 1;
+  }
+
+  method void move_cursor_left() noexcept {
+    if (cx == 0) {
+      return;
+    }
+    cx -= 1;
+  }
+
+  method void move_cursor_up() noexcept {
+    if (cy == 0) {
+      return;
+    }
+    cy -= 1;
+  }
+
+  method void move_cursor_down() noexcept {
+    if (cy >= rows_num - 1) {
+      return;
+    }
+    cy += 1;
+  }
+
+  method void update_cursor_position() noexcept {
+    cmd_buf.change_cursor_position(cx, cy);
+  }
+
+  method void update_window() noexcept {
+    update_cursor_position();
+
     cmd_buf.flush();
   }
 
   method void clear_window() noexcept {
     cmd_buf.reset();
 
-    cmd_buf.write(str("\x1b[2J"));
-    cmd_buf.write(str("\x1b[H"));
+    cmd_buf.write(str("\x1b[2J"));  // clear terminal screen
+    cmd_buf.write(str("\x1b[H"));   // position cursor at the top-left corner
 
     cmd_buf.flush();
   }
@@ -206,6 +287,30 @@ fn internal void handle_key_input(u8 c) noexcept {
     e.clear_window();
     exit(0);
   }
+
+  switch (c) {
+    case 'a': {
+      e.move_cursor_left();
+      break;
+    }
+    case 'd': {
+      e.move_cursor_right();
+      break;
+    }
+    case 'w': {
+      e.move_cursor_up();
+      break;
+    }
+    case 's': {
+      e.move_cursor_down();
+      break;
+    }
+    default: {
+      break;
+    }
+  }
+
+  e.update_window();
 }
 
 fn i32 main() noexcept {

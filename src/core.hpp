@@ -168,7 +168,7 @@ struct mc {
   method void reverse() noexcept {
     var dirty usz i, j;
     var dirty u8 x;
-    for (i = 0, j = len - 1; i < j; i += 1, j += 1) {
+    for (i = 0, j = len - 1; i < j; i += 1, j -= 1) {
       x = ptr[i];
       ptr[i] = ptr[j];
       ptr[j] = x;
@@ -397,6 +397,11 @@ struct bb {
     return c.len;
   }
 
+  method void unsafe_write(u8 x) noexcept {
+    ptr[len] = x;
+    len += sizeof(u8);
+  }
+
   method void unsafe_write(i16 x) noexcept {
     var i16* p = cast(i16*, tip());
     *p = x;
@@ -408,6 +413,8 @@ struct bb {
     *p = x;
     len += sizeof(f32);
   }
+
+  method usz format_dec(u32 x) noexcept { return format_dec(cast(u64, x)); }
 
   method usz format_dec(u64 x) noexcept {
     var mc t = tail();
