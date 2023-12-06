@@ -1,0 +1,39 @@
+# build results
+/bin/
+
+# build cache
+/cache/
+
+# local development setup
+.build.env
+/.vscode/
+/.idea/
+
+tmp
+temp
+
+*.lock
+*.tmp
+*.temp
+*.test
+
+*.log
+*.gz
+*.tar
+*.zip
+
+# binaries and incremental build cache
+*.exe
+*.exe~
+*.dll
+*.lib
+*.so
+*.o
+*.a
+*.out
+*.d
+
+*.doc
+*.docx
+*.xls
+*.xlsx
