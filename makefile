@@ -52,7 +52,7 @@ ${CACHE_DIR}:
 	mkdir -p ${CACHE_DIR}
 
 ${BIN_PATH}: ${CACHE_DIR}/main.o
-	${CC} -o $@ $^
+	${CC} -rdynamic -o $@ $^
 
 ${CACHE_DIR}/main.o: src/main.cpp makefile
 	${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<

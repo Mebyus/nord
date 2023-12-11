@@ -1,5 +1,6 @@
 #include <ctype.h>
 #include <errno.h>
+#include <execinfo.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,23 +20,77 @@ fn void copy(u8* src, u8* dst, usz n) noexcept {
   memcpy(dst, src, n);
 }
 
+fn internal void fd_write(i32 fd, mc c) noexcept {
+  var u8* ptr = c.ptr;
+  var usz len = c.len;
+  while (len > 0) {
+    var isz n = write(fd, ptr, len);
+    if (n < 0) {
+      // TODO: add error handling
+      return;
+    }
+
+    len -= cast(usz, n);
+    ptr += n;
+  }
+}
+
+fn internal void stdout_write(mc c) noexcept {
+  const i32 stdout_fd = 1;
+  fd_write(stdout_fd, c);
+}
+
+fn internal void stderr_write(mc c) noexcept {
+  const i32 stderr_fd = 2;
+  fd_write(stderr_fd, c);
+}
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 
-struct termios original_terminal_state;
+var global struct termios original_terminal_state;
 
-fn void fatal(const char* s) noexcept;
+#define MAX_BACKTRACE_LEVEL 32
+#define PANIC_DISPLAY_BUFFER_SIZE 1 << 10
+
+var global usz backtrace_buffer[MAX_BACKTRACE_LEVEL];
+var global u8 panic_display_buffer[PANIC_DISPLAY_BUFFER_SIZE];
+
+fn void fatal(mc msg, mc filename, u32 line) noexcept {
+  var bb buf = bb(panic_display_buffer, PANIC_DISPLAY_BUFFER_SIZE);
+
+  buf.write(filename);
+  buf.write(str(":"));
+  buf.format_dec(line);
+
+  buf.write(str("\npanic: "));
+  buf.write(msg);
+  buf.write(str("\n"));
+
+  stderr_write(buf.chunk());
+
+  i32 number_of_entries =
+      backtrace(cast(void**, backtrace_buffer), MAX_BACKTRACE_LEVEL);
+
+  const i32 stderr_fd = 2;
+  backtrace_symbols_fd(cast(void**, &backtrace_buffer), number_of_entries,
+                       stderr_fd);
+
+  exit(1);
+}
+
+#define panic(msg) fatal(msg, macro_src_file, macro_src_line)
 
 fn internal void exit_raw_mode() noexcept {
   i32 rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal_state);
   if (rcode < 0) {
-    fatal("failed to exit raw mode\r\n");
+    panic(str("failed to exit raw mode"));
   }
 }
 
 fn internal void enter_raw_mode() noexcept {
   i32 rcode = tcgetattr(STDIN_FILENO, &original_terminal_state);
   if (rcode < 0) {
-    fatal("failed to get current terminal state\n");
+    panic(str("failed to get current terminal state"));
   }
 
   struct termios terminal_state = original_terminal_state;
@@ -51,7 +106,7 @@ fn internal void enter_raw_mode() noexcept {
 
   rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal_state);
   if (rcode < 0) {
-    fatal("failed to enter raw mode\n");
+    panic(str("failed to enter raw mode"));
   }
   atexit(exit_raw_mode);
 }
@@ -60,26 +115,10 @@ fn internal struct winsize get_viewport_size() noexcept {
   struct winsize ws;
   i32 rcode = ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
   if (rcode < 0 || ws.ws_col == 0) {
-    fatal("failed to get viewport size\r\n");
+    panic(str("failed to get viewport size"));
   }
 
   return ws;
-}
-
-fn internal void stdout_write(mc c) noexcept {
-  const i32 stdout_fd = 1;
-
-  var u8* ptr = c.ptr;
-  var usz len = c.len;
-  while (len > 0) {
-    var isz n = write(stdout_fd, ptr, len);
-    if (n < 0) {
-      fatal("failed to write to stdout\r\n");
-    }
-
-    len -= cast(usz, n);
-    ptr += n;
-  }
 }
 
 #define COMMAND_SKETCH_BUFFER_SIZE 32
@@ -94,7 +133,7 @@ struct CommandBuffer {
   con CommandBuffer(usz initial_size) noexcept {
     var u8* bytes = (u8*)malloc(initial_size);
     if (bytes == nil) {
-      fatal("failed to allocate memory for command buffer\r\n");
+      panic(str("failed to allocate memory for command buffer"));
     }
 
     s = bb(bytes, initial_size);
@@ -116,7 +155,7 @@ struct CommandBuffer {
 
     var u8* bytes = (u8*)realloc(s.ptr, new_cap);
     if (bytes == nil) {
-      fatal("failed to grow memory for command buffer\r\n");
+      panic(str("failed to grow memory for command buffer"));
     }
     s.cap = new_cap;
     s.ptr = bytes;
@@ -148,12 +187,30 @@ struct CommandBuffer {
 #define COMMAND_BUFFER_INITIAL_SIZE 1 << 14
 
 struct Editor {
-  enum struct Key : u8 {
+  // type of input sequence
+  enum struct Seq : u8 {
+    // key is a regular printable character
+    REGULAR,
+
+    // malformed sequence
+    UNKNOWN,
+
     ESC,
+
     LEFT,
     RIGHT,
     UP,
     DOWN,
+
+    PAGE_UP,
+    PAGE_DOWN,
+  };
+
+  struct Key {
+    // regular character
+    u8 c;
+
+    Seq s;
   };
 
   CommandBuffer cmd_buf;
@@ -233,6 +290,10 @@ struct Editor {
     cy += 1;
   }
 
+  method void move_cursor_top() noexcept { cy = 0; }
+
+  method void move_cursor_bot() noexcept { cy = rows_num - 1; }
+
   method void update_cursor_position() noexcept {
     cmd_buf.change_cursor_position(cx, cy);
   }
@@ -253,57 +314,130 @@ struct Editor {
   }
 };
 
-var Editor e;
+var global Editor e;
 
-fn void fatal(const char* s) noexcept {
-  e.clear_window();
+fn internal Editor::Key read_key_input() noexcept {
+  const i32 stdin_fd = 0;
 
-  perror(s);
-  exit(1);
-}
-
-fn internal u8 read_key_input() noexcept {
+  u8 c = 0;
   while (true) {
-    u8 c = 0;
-    isz num_bytes_read = read(STDIN_FILENO, &c, 1);
+    isz num_bytes_read = read(stdin_fd, &c, 1);
     if ((num_bytes_read == -1 && errno != EAGAIN) || num_bytes_read == 0) {
       // read timed out, no input was given
       continue;
     }
 
     if (num_bytes_read < 0) {
-      fatal("failed to read input\r\n");
+      panic(str("failed to read input"));
     }
 
-    return c;
+    break;
   }
 
-  fatal("unreachable [0x0002]\n");
-  return 0;
+  if (c != '\x1b') {
+    return Editor::Key{.c = c, .s = Editor::Seq::REGULAR};
+  }
+
+  u8 seq[3];
+
+  isz num_bytes_read = read(stdin_fd, &seq[0], 1);
+  if (num_bytes_read != 1) {
+    return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
+  }
+
+  num_bytes_read = read(stdin_fd, &seq[1], 1);
+  if (num_bytes_read != 1) {
+    return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
+  }
+
+  if (seq[0] == '[') {
+    if ('0' <= seq[1] && seq[1] <= '9') {
+      num_bytes_read = read(stdin_fd, &seq[2], 1);
+      if (num_bytes_read != 1) {
+        return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
+      }
+
+      if (seq[2] == '~') {
+        switch (seq[1]) {
+          case '5': {
+            return Editor::Key{.c = 0, .s = Editor::Seq::PAGE_UP};
+          }
+          case '6': {
+            return Editor::Key{.c = 0, .s = Editor::Seq::PAGE_DOWN};
+          }
+          default: {
+            return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
+          }
+        }
+      }
+    }
+
+    switch (seq[1]) {
+      case 'A': {
+        return Editor::Key{.c = 0, .s = Editor::Seq::UP};
+      }
+      case 'B': {
+        return Editor::Key{.c = 0, .s = Editor::Seq::DOWN};
+      }
+      case 'C': {
+        return Editor::Key{.c = 0, .s = Editor::Seq::RIGHT};
+      }
+      case 'D': {
+        return Editor::Key{.c = 0, .s = Editor::Seq::LEFT};
+      }
+      default: {
+        return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
+      }
+    }
+  }
+
+  return Editor::Key{.c = 0, .s = Editor::Seq::UNKNOWN};
 }
 
-fn internal void handle_key_input(u8 c) noexcept {
-  if (c == CTRL_KEY('q')) {
-    e.clear_window();
-    exit(0);
+fn internal void handle_key_input(Editor::Key k) noexcept {
+  if (k.s == Editor::Seq::REGULAR) {
+    if (k.c == CTRL_KEY('q')) {
+      e.clear_window();
+      exit(0);
+    }
+    return;
   }
 
-  switch (c) {
-    case 'a': {
+  switch (k.s) {
+    case Editor::Seq::LEFT: {
       e.move_cursor_left();
       break;
     }
-    case 'd': {
+    case Editor::Seq::RIGHT: {
       e.move_cursor_right();
       break;
     }
-    case 'w': {
+    case Editor::Seq::UP: {
       e.move_cursor_up();
       break;
     }
-    case 's': {
+    case Editor::Seq::DOWN: {
       e.move_cursor_down();
       break;
+    }
+
+    case Editor::Seq::PAGE_UP: {
+      e.move_cursor_top();
+      break;
+    }
+    case Editor::Seq::PAGE_DOWN: {
+      e.move_cursor_bot();
+      break;
+    }
+
+    case Editor::Seq::UNKNOWN: {
+      break;
+    }
+    case Editor::Seq::ESC: {
+      break;
+    }
+    case Editor::Seq::REGULAR: {
+      panic(str("unreachable"));
     }
     default: {
       break;
@@ -317,10 +451,10 @@ fn i32 main() noexcept {
   e.init();
 
   while (true) {
-    u8 c = read_key_input();
-    handle_key_input(c);
+    Editor::Key k = read_key_input();
+    handle_key_input(k);
   }
 
-  fatal("unreachable [0x0001]\n");
+  panic(str("unreachable"));
   return 0;
 }

@@ -85,6 +85,15 @@ fn inline void swap(T& a, T& b) noexcept {
 // memory copy system call
 fn void copy(u8* src, u8* dst, usz n) noexcept;
 
+// Small object that holds information about non-fatal error
+struct error {
+  // Unique identifier of error origin location in code base
+  usz origin;
+
+  //
+  usz kind;
+};
+
 // Memory Chunk
 //
 // Represents continuous region in memory in form of raw bytes.
@@ -149,8 +158,7 @@ struct mc {
     if (is_nil()) {
       return 0;
     }
-    *ptr = x;
-    return 1;
+    return unsafe_write(x);
   }
 
   method usz unsafe_write(mc c) noexcept {
@@ -160,7 +168,7 @@ struct mc {
 
   // Write single byte to chunk
   method usz unsafe_write(u8 x) noexcept {
-    *ptr = x;
+    ptr[0] = x;
     return 1;
   }
 
@@ -234,6 +242,9 @@ struct mc {
 
 // shorthand for C string to memory chunk literal conversion
 #define str(s) mc((u8*)u8##s, sizeof(u8##s) - 1)
+
+#define macro_src_file mc((u8*)__FILE__, sizeof(__FILE__) - 1)
+#define macro_src_line cast(u32, __LINE__)
 
 internal const u8 max_small_decimal = 99;
 internal const u8 small_decimals_string[] =
@@ -340,11 +351,11 @@ method usz mc::format_bin_delim(u32 x) noexcept {
 // Bytes Buffer
 //
 // Accumulates multiple writes into single continuous memory region.
-// Slice has capacity i.e. maximum number of bytes it can hold. After
+// Buffer has capacity i.e. maximum number of bytes it can hold. After
 // number of written bytes reaches this maximum all subsequent writes
 // will write nothing and always return 0, until reset() is called
 //
-// Slice is much alike memory chunk in terms of memory ownership
+// Buffer is much alike memory chunk in terms of memory ownership
 struct bb {
   u8* ptr;
   usz len;
@@ -417,10 +428,11 @@ struct bb {
   method usz format_dec(u32 x) noexcept { return format_dec(cast(u64, x)); }
 
   method usz format_dec(u64 x) noexcept {
-    var mc t = tail();
-    if (t.is_nil()) {
+    if (is_full()) {
       return 0;
     }
+
+    var mc t = tail();
     var usz w = t.format_dec(x);
     len += w;
     return w;
