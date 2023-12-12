@@ -204,6 +204,8 @@ struct Editor {
 
     PAGE_UP,
     PAGE_DOWN,
+
+    DELETE,
   };
 
   struct Key {
@@ -359,6 +361,9 @@ fn internal Editor::Key read_key_input() noexcept {
 
       if (seq[2] == '~') {
         switch (seq[1]) {
+          case '3': {
+            return Editor::Key{.c = 0, .s = Editor::Seq::DELETE};
+          }
           case '5': {
             return Editor::Key{.c = 0, .s = Editor::Seq::PAGE_UP};
           }
@@ -427,6 +432,11 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
     }
     case Editor::Seq::PAGE_DOWN: {
       e.move_cursor_bot();
+      break;
+    }
+
+    case Editor::Seq::DELETE: {
+      e.move_cursor_top();
       break;
     }
 
