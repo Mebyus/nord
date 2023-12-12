@@ -19,7 +19,7 @@ CPPFLAGS = -MMD -MP -MF
 # Compiler warnings
 WARNINGS = -Wall -Wextra -Wconversion -Wunreachable-code -Wshadow -Wundef -Wfloat-equal -Wformat=2 \
 -Wpointer-arith -Winit-self -Wduplicated-branches -Wduplicated-cond -Wnull-dereference -Wswitch-enum -Wvla \
--Wnoexcept -Wswitch-default
+-Wnoexcept -Wswitch-default -Wno-main
 
 # Compiler code generation conventions flags
 GENFLAGS = -fwrapv -fno-exceptions

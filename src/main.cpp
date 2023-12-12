@@ -60,12 +60,12 @@ fn void fatal(mc msg, mc filename, u32 line) noexcept {
   var bb buf = bb(panic_display_buffer, PANIC_DISPLAY_BUFFER_SIZE);
 
   buf.write(filename);
-  buf.write(str(":"));
+  buf.write(macro_static_str(":"));
   buf.format_dec(line);
 
-  buf.write(str("\npanic: "));
+  buf.write(macro_static_str("\npanic: "));
   buf.write(msg);
-  buf.write(str("\n"));
+  buf.write(macro_static_str("\n"));
 
   stderr_write(buf.chunk());
 
@@ -84,14 +84,14 @@ fn void fatal(mc msg, mc filename, u32 line) noexcept {
 fn internal void exit_raw_mode() noexcept {
   i32 rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal_state);
   if (rcode < 0) {
-    panic(str("failed to exit raw mode"));
+    panic(macro_static_str("failed to exit raw mode"));
   }
 }
 
 fn internal void enter_raw_mode() noexcept {
   i32 rcode = tcgetattr(STDIN_FILENO, &original_terminal_state);
   if (rcode < 0) {
-    panic(str("failed to get current terminal state"));
+    panic(macro_static_str("failed to get current terminal state"));
   }
 
   struct termios terminal_state = original_terminal_state;
@@ -107,7 +107,7 @@ fn internal void enter_raw_mode() noexcept {
 
   rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &terminal_state);
   if (rcode < 0) {
-    panic(str("failed to enter raw mode"));
+    panic(macro_static_str("failed to enter raw mode"));
   }
   atexit(exit_raw_mode);
 }
@@ -116,7 +116,7 @@ fn internal struct winsize get_viewport_size() noexcept {
   struct winsize ws;
   i32 rcode = ioctl(STDOUT_FILENO, TIOCGWINSZ, &ws);
   if (rcode < 0 || ws.ws_col == 0) {
-    panic(str("failed to get viewport size"));
+    panic(macro_static_str("failed to get viewport size"));
   }
 
   return ws;
@@ -134,7 +134,7 @@ struct CommandBuffer {
   con CommandBuffer(usz initial_size) noexcept {
     var u8* bytes = (u8*)malloc(initial_size);
     if (bytes == nil) {
-      panic(str("failed to allocate memory for command buffer"));
+      panic(macro_static_str("failed to allocate memory for command buffer"));
     }
 
     s = bb(bytes, initial_size);
@@ -156,7 +156,7 @@ struct CommandBuffer {
 
     var u8* bytes = (u8*)realloc(s.ptr, new_cap);
     if (bytes == nil) {
-      panic(str("failed to grow memory for command buffer"));
+      panic(macro_static_str("failed to grow memory for command buffer"));
     }
     s.cap = new_cap;
     s.ptr = bytes;
@@ -167,7 +167,7 @@ struct CommandBuffer {
   method void change_cursor_position(u32 x, u32 y) noexcept {
     // prepare command string
     bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
-    buf.unsafe_write(str("\x1b["));
+    buf.unsafe_write(macro_static_str("\x1b["));
     buf.format_dec(y + 1);
     buf.unsafe_write(cast(u8, ';'));
     buf.format_dec(x + 1);
@@ -177,12 +177,12 @@ struct CommandBuffer {
     write(buf.chunk());
   }
 
-  method void hide_cursor() noexcept { write(str("\x1b[?25l")); }
+  method void hide_cursor() noexcept { write(macro_static_str("\x1b[?25l")); }
 
-  method void show_cursor() noexcept { write(str("\x1b[?25h")); }
+  method void show_cursor() noexcept { write(macro_static_str("\x1b[?25h")); }
 
   // Begin new line in output
-  method void nl() noexcept { write(str("\r\n")); }
+  method void nl() noexcept { write(macro_static_str("\r\n")); }
 
   method void reset() noexcept { s.reset(); }
 
@@ -264,13 +264,13 @@ struct Editor {
     lines = chunk(lines_buf, 2);
 
     lines.ptr[0].num = 0;
-    lines.ptr[0].data = str("Hello, world!");
+    lines.ptr[0].data = macro_static_str("Hello, world!");
 
     lines.ptr[1].num = 1;
-    lines.ptr[1].data =
-        str("Hello, world! Hello, world! Hello, world! Hello, world! Hello, "
-            "world! Hello, world! Hello, world! Hello, world! Hello, world! "
-            "Hello, world!");
+    lines.ptr[1].data = macro_static_str(
+        "Hello, world! Hello, world! Hello, world! Hello, world! Hello, "
+        "world! Hello, world! Hello, world! Hello, world! Hello, world! "
+        "Hello, world!");
     // end test data
 
     cmd_buf.hide_cursor();
@@ -278,6 +278,10 @@ struct Editor {
     cmd_buf.show_cursor();
     update_cursor_position();
     cmd_buf.flush();
+  }
+
+  method void init(cstr filename) noexcept {
+    stdout_write(filename.as_str());
   }
 
   method void draw_test() noexcept {
@@ -288,15 +292,15 @@ struct Editor {
     }
 
     for (; y < rows_num - 1; y += 1) {
-      cmd_buf.write(str("#\r\n"));
+      cmd_buf.write(macro_static_str("#\r\n"));
     }
-    cmd_buf.write(str("#"));
+    cmd_buf.write(macro_static_str("#"));
 
     var dirty u8 s[32];
     var bb buf = bb(s, 32);
-    buf.write(str("   cols = "));
+    buf.write(macro_static_str("   cols = "));
     buf.format_dec(cols_num);
-    buf.write(str(", rows = "));
+    buf.write(macro_static_str(", rows = "));
     buf.format_dec(rows_num);
     cmd_buf.write(buf.chunk());
   }
@@ -346,8 +350,9 @@ struct Editor {
   method void clear_window() noexcept {
     cmd_buf.reset();
 
-    cmd_buf.write(str("\x1b[2J"));  // clear terminal screen
-    cmd_buf.write(str("\x1b[H"));   // position cursor at the top-left corner
+    cmd_buf.write(macro_static_str("\x1b[2J"));  // clear terminal screen
+    cmd_buf.write(
+        macro_static_str("\x1b[H"));  // position cursor at the top-left corner
 
     cmd_buf.flush();
   }
@@ -367,7 +372,7 @@ fn internal Editor::Key read_key_input() noexcept {
     }
 
     if (num_bytes_read < 0) {
-      panic(str("failed to read input"));
+      panic(macro_static_str("failed to read input"));
     }
 
     break;
@@ -484,7 +489,7 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
       break;
     }
     case Editor::Seq::REGULAR: {
-      panic(str("unreachable"));
+      panic(macro_static_str("unreachable"));
     }
     default: {
       break;
@@ -495,15 +500,19 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  // open();
-
-  e.init();
+  if (argc < 2) {
+    e.init();
+  } else {
+    cstr filename = cstr(argv[1]);
+    e.init(filename);
+    return 0; // TODO: remove this stub
+  }
 
   while (true) {
     Editor::Key k = read_key_input();
     handle_key_input(k);
   }
 
-  panic(str("unreachable"));
+  panic(macro_static_str("unreachable"));
   return 0;
 }

@@ -245,7 +245,7 @@ struct mc {
 };
 
 // shorthand for C string to memory chunk literal conversion
-#define str(s) mc((u8*)u8##s, sizeof(u8##s) - 1)
+#define macro_static_str(s) mc((u8*)u8##s, sizeof(u8##s) - 1)
 
 #define macro_src_file mc((u8*)__FILE__, sizeof(__FILE__) - 1)
 #define macro_src_line cast(u32, __LINE__)
@@ -483,5 +483,53 @@ struct chunk {
 
   method usz size() noexcept { return chunk_size(T, len); }
 };
+
+// C String
+//
+// Represents a sequence of bytes in which the last byte always equals
+// zero. Designed for interfacing with traditional C-style strings
+struct cstr {
+  // Pointer to first byte in string
+  u8* ptr;
+
+  // Number of bytes in string before zero terminator byte
+  //
+  // Thus actual number of stored bytes available through
+  // pointer is len + 1
+  usz len;
+
+  con cstr() noexcept : ptr(nil), len(0) {}
+
+  // This constructor is deliberately unsafe. Use it only
+  // on C strings which come from trusted source
+  //
+  // For safe version with proper error-checking refer to
+  // function try_parse_cstr
+  con cstr(u8* s) noexcept {
+    var usz i = 0;
+    while (s[i] != 0) {
+      i += 1;
+    }
+    ptr = s;
+    len = i;
+  }
+
+  // Use this constructor if length of C string is already
+  // known before the call. Second argument is number of
+  // bytes in string, not including zero terminator
+  con cstr(u8 *s, usz n) noexcept : ptr(s), len(n) {}
+
+  method bool is_nil() noexcept { return len == 0; }
+
+  // Returns Memory Chunk with stored bytes. Zero terminator
+  // is not included
+  method mc as_str() noexcept { return mc(ptr, len); }
+
+  // Returns Memory Chunk with stored bytes. Includes zero terminator
+  // in its length
+  method mc with_term() noexcept { return mc(ptr, len + 1); }
+};
+
+#define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
 
 #endif  // GUARD_CORE_HPP
