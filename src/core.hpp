@@ -138,6 +138,10 @@ struct mc {
 
   method mc slice_to(usz end) noexcept { return slice(0, end); }
 
+  // Return a slice from original chunk that contains at most
+  // <size> bytes
+  method mc crop(usz size) noexcept { return slice_to(min(len, size)); }
+
   method bool is_nil() noexcept { return len == 0; }
 
   method usz write(u8* bytes, usz n) noexcept {
@@ -458,6 +462,26 @@ struct bb {
   method mc chunk() noexcept { return mc(ptr, len); }
 
   method mc tail() noexcept { return mc(tip(), rem()); }
+};
+
+// Stores elements and their number together as a single data structure
+template <typename T>
+struct chunk {
+  // Pointer to first element in chunk
+  T* ptr;
+
+  // Number of elements in chunk
+  usz len;
+
+  con chunk() noexcept : ptr(nil), len(0) {}
+
+  con chunk(T* elems, usz n) noexcept : ptr(elems), len(n) {}
+
+  method bool is_nil() noexcept { return len == 0; }
+
+  method mc as_mc() noexcept { return mc(cast(u8*, ptr), size()); }
+
+  method usz size() noexcept { return chunk_size(T, len); }
 };
 
 #endif  // GUARD_CORE_HPP

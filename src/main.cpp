@@ -1,6 +1,7 @@
 #include <ctype.h>
 #include <errno.h>
 #include <execinfo.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -176,6 +177,13 @@ struct CommandBuffer {
     write(buf.chunk());
   }
 
+  method void hide_cursor() noexcept { write(str("\x1b[?25l")); }
+
+  method void show_cursor() noexcept { write(str("\x1b[?25h")); }
+
+  // Begin new line in output
+  method void nl() noexcept { write(str("\r\n")); }
+
   method void reset() noexcept { s.reset(); }
 
   method void flush() noexcept {
@@ -185,6 +193,15 @@ struct CommandBuffer {
 };
 
 #define COMMAND_BUFFER_INITIAL_SIZE 1 << 14
+
+struct TextLine {
+  // line number, zero-based
+  u32 num;
+
+  mc data;
+};
+
+var global TextLine lines_buf[2];
 
 struct Editor {
   // type of input sequence
@@ -217,6 +234,8 @@ struct Editor {
 
   CommandBuffer cmd_buf;
 
+  chunk<TextLine> lines;
+
   // cursor position, originating from top-left corner
   u32 cx;
   u32 cy;
@@ -241,16 +260,34 @@ struct Editor {
     rows_num = cast(u32, ws.ws_row);
     cols_num = cast(u32, ws.ws_col);
 
-    cmd_buf.write(str("\x1b[?25l"));  // hide cursor
+    // test data
+    lines = chunk(lines_buf, 2);
+
+    lines.ptr[0].num = 0;
+    lines.ptr[0].data = str("Hello, world!");
+
+    lines.ptr[1].num = 1;
+    lines.ptr[1].data =
+        str("Hello, world! Hello, world! Hello, world! Hello, world! Hello, "
+            "world! Hello, world! Hello, world! Hello, world! Hello, world! "
+            "Hello, world!");
+    // end test data
+
+    cmd_buf.hide_cursor();
     draw_test();
-    cmd_buf.write(str("\x1b[?25h"));  // show cursor
+    cmd_buf.show_cursor();
     update_cursor_position();
     cmd_buf.flush();
   }
 
   method void draw_test() noexcept {
-    u32 y;
-    for (y = 0; y < rows_num - 1; y += 1) {
+    u32 y = 0;
+    for (; y < lines.len && y < rows_num - 1; y += 1) {
+      cmd_buf.write(lines.ptr[y].data.crop(cols_num));
+      cmd_buf.nl();
+    }
+
+    for (; y < rows_num - 1; y += 1) {
       cmd_buf.write(str("#\r\n"));
     }
     cmd_buf.write(str("#"));
@@ -457,7 +494,9 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
   e.update_window();
 }
 
-fn i32 main() noexcept {
+fn i32 main(i32 argc, u8** argv) noexcept {
+  // open();
+
   e.init();
 
   while (true) {
