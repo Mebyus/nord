@@ -6,6 +6,7 @@
 
 #undef min
 #undef max
+#undef EOF
 
 // Modify function or constant to be bound to translation unit
 #define internal static
@@ -517,7 +518,7 @@ struct cstr {
   // Use this constructor if length of C string is already
   // known before the call. Second argument is number of
   // bytes in string, not including zero terminator
-  con cstr(u8 *s, usz n) noexcept : ptr(s), len(n) {}
+  con cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
 
   method bool is_nil() noexcept { return len == 0; }
 
@@ -531,5 +532,25 @@ struct cstr {
 };
 
 #define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
+
+struct FileReadResult {
+  enum struct Code : u8 {
+    Ok,
+
+    // Generic error, no specifics known
+    Error,
+  };
+
+  mc data;
+
+  Code code;
+
+  con FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
+  con FileReadResult(Code c) noexcept : data(mc()), code(c) {}
+  con FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
+
+  method bool is_ok() noexcept { return code == Code::Ok; }
+  method bool is_err() noexcept { return code != Code::Ok; }
+};
 
 #endif  // GUARD_CORE_HPP

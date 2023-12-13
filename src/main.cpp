@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -36,6 +37,19 @@ fn internal void fd_write(i32 fd, mc c) noexcept {
   }
 }
 
+// Returns number of bytes read from file descriptor
+fn internal usz fd_read(i32 fd, mc c) noexcept {
+  var bb buf = bb(c);
+  while (!buf.is_full()) {
+    var isz n = read(fd, buf.tip(), buf.rem());
+    if (n <= 0) {
+      return buf.len;
+    }
+    buf.len += cast(usz, n);
+  }
+  return buf.len;
+}
+
 fn internal void stdout_write(mc c) noexcept {
   const i32 stdout_fd = 1;
   fd_write(stdout_fd, c);
@@ -44,6 +58,41 @@ fn internal void stdout_write(mc c) noexcept {
 fn internal void stderr_write(mc c) noexcept {
   const i32 stderr_fd = 2;
   fd_write(stderr_fd, c);
+}
+
+fn FileReadResult read_file(cstr filename) noexcept {
+  var dirty struct stat s;
+  var i32 rcode = stat(cast(char*, filename.ptr), &s);
+  if (rcode < 0) {
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var usz size = s.st_size;
+  if (size == 0) {
+    // File is empty, nothing to read
+    return FileReadResult(mc());
+  }
+
+  var i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
+  if (fd < 0) {
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var u8* bytes = (u8*)malloc(size);
+  if (bytes == nil) {
+    close(fd);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var mc data = mc(bytes, size);
+  var usz n = fd_read(fd, data);
+  close(fd);
+  if (n == 0) {
+    free(data.ptr);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  return FileReadResult(data.slice_to(n));
 }
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -195,13 +244,65 @@ struct CommandBuffer {
 #define COMMAND_BUFFER_INITIAL_SIZE 1 << 14
 
 struct TextLine {
-  // line number, zero-based
-  u32 num;
-
+  // bytes that constitutes a line of text, not including
+  // trailing newline characters
   mc data;
+
+  // line number, one-based
+  u32 num;
 };
 
-var global TextLine lines_buf[2];
+var global TextLine lines_buffer[1 << 10];
+
+fn internal chunk<TextLine> split_lines(mc text) noexcept {
+  // start index of current line in text chunk
+  var usz start = 0;
+
+  // end index of current line in text chunk
+  var usz end = 0;
+
+  // line append index
+  var usz j = 0;
+
+  // text scan index
+  var usz i = 0;
+  while (i < text.len) {
+    var u8 c = text.ptr[i];
+
+    if (c != '\r' && c != '\n') {
+      end += 1;
+    }
+
+    if (c == '\n') {
+      var mc line = text.slice(start, end);
+
+      lines_buffer[j].num = cast(u32, j + 1);
+      lines_buffer[j].data = line;
+
+      j += 1;
+
+      start = i + 1;
+      end = start;
+    }
+
+    i += 1;
+  }
+
+  if (start == end) {
+    // no need to save last line
+    return chunk<TextLine>(lines_buffer, j);
+  }
+
+  // save last line
+  var mc line = text.slice(start, end);
+
+  lines_buffer[j].num = cast(u32, j + 1);
+  lines_buffer[j].data = line;
+
+  j += 1;
+
+  return chunk<TextLine>(lines_buffer, j);
+}
 
 struct Editor {
   // type of input sequence
@@ -244,11 +345,55 @@ struct Editor {
   u32 rows_num;
   u32 cols_num;
 
+  // position of text viewport top-left corner
+  u32 vx;
+  u32 vy;
+
   con Editor() noexcept {}
 
   method void init() noexcept {
+    init_terminal();
+
+    cmd_buf.hide_cursor();
+    draw_test();
+    cmd_buf.show_cursor();
+    update_cursor_position();
+    cmd_buf.flush();
+  }
+
+  method void init(cstr filename) noexcept {
+    var FileReadResult result = read_file(filename);
+    if (result.is_err()) {
+      // TODO: display error message
+      return;
+    }
+
+    var mc text = result.data;
+
+    lines = split_lines(text);
+
+    init_terminal();
+
+    // for (usz i = 0; i < lines.len; i++) {
+    //   var TextLine line = lines.ptr[i];
+
+    //   stdout_write(line.data);
+    //   stdout_write(macro_static_str("\n"));
+    // }
+
+    cmd_buf.hide_cursor();
+    draw_test();
+    cmd_buf.show_cursor();
+    update_cursor_position();
+    cmd_buf.flush();
+  }
+
+  method void init_terminal() noexcept {
     cx = 0;
     cy = 0;
+
+    vx = 0;
+    vy = 0;
 
     enter_raw_mode();
 
@@ -259,29 +404,6 @@ struct Editor {
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
     cols_num = cast(u32, ws.ws_col);
-
-    // test data
-    lines = chunk(lines_buf, 2);
-
-    lines.ptr[0].num = 0;
-    lines.ptr[0].data = macro_static_str("Hello, world!");
-
-    lines.ptr[1].num = 1;
-    lines.ptr[1].data = macro_static_str(
-        "Hello, world! Hello, world! Hello, world! Hello, world! Hello, "
-        "world! Hello, world! Hello, world! Hello, world! Hello, world! "
-        "Hello, world!");
-    // end test data
-
-    cmd_buf.hide_cursor();
-    draw_test();
-    cmd_buf.show_cursor();
-    update_cursor_position();
-    cmd_buf.flush();
-  }
-
-  method void init(cstr filename) noexcept {
-    stdout_write(filename.as_str());
   }
 
   method void draw_test() noexcept {
@@ -291,18 +413,18 @@ struct Editor {
       cmd_buf.nl();
     }
 
-    for (; y < rows_num - 1; y += 1) {
-      cmd_buf.write(macro_static_str("#\r\n"));
-    }
-    cmd_buf.write(macro_static_str("#"));
+    // for (; y < rows_num - 1; y += 1) {
+    //   cmd_buf.write(macro_static_str("#\r\n"));
+    // }
+    // cmd_buf.write(macro_static_str("#"));
 
-    var dirty u8 s[32];
-    var bb buf = bb(s, 32);
-    buf.write(macro_static_str("   cols = "));
-    buf.format_dec(cols_num);
-    buf.write(macro_static_str(", rows = "));
-    buf.format_dec(rows_num);
-    cmd_buf.write(buf.chunk());
+    // var dirty u8 s[32];
+    // var bb buf = bb(s, 32);
+    // buf.write(macro_static_str("   cols = "));
+    // buf.format_dec(cols_num);
+    // buf.write(macro_static_str(", rows = "));
+    // buf.format_dec(rows_num);
+    // cmd_buf.write(buf.chunk());
   }
 
   method void move_cursor_right() noexcept {
@@ -505,7 +627,6 @@ fn i32 main(i32 argc, u8** argv) noexcept {
   } else {
     cstr filename = cstr(argv[1]);
     e.init(filename);
-    return 0; // TODO: remove this stub
   }
 
   while (true) {
