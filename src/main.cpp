@@ -349,13 +349,18 @@ struct Editor {
   u32 vx;
   u32 vy;
 
+  // number of rows in jump when page up/down is pressed
+  u32 viewport_page_stride;
+
+  bool full_viewport_upd_flag;
+
   con Editor() noexcept {}
 
   method void init() noexcept {
     init_terminal();
 
     cmd_buf.hide_cursor();
-    draw_test();
+    draw_text();
     cmd_buf.show_cursor();
     update_cursor_position();
     cmd_buf.flush();
@@ -374,15 +379,8 @@ struct Editor {
 
     init_terminal();
 
-    // for (usz i = 0; i < lines.len; i++) {
-    //   var TextLine line = lines.ptr[i];
-
-    //   stdout_write(line.data);
-    //   stdout_write(macro_static_str("\n"));
-    // }
-
     cmd_buf.hide_cursor();
-    draw_test();
+    draw_text();
     cmd_buf.show_cursor();
     update_cursor_position();
     cmd_buf.flush();
@@ -395,6 +393,8 @@ struct Editor {
     vx = 0;
     vy = 0;
 
+    full_viewport_upd_flag = false;
+
     enter_raw_mode();
 
     cmd_buf = CommandBuffer(COMMAND_BUFFER_INITIAL_SIZE);
@@ -404,13 +404,27 @@ struct Editor {
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
     cols_num = cast(u32, ws.ws_col);
+
+    viewport_page_stride = (2 * rows_num) / 3;
   }
 
-  method void draw_test() noexcept {
+  method void draw_text() noexcept {
+    // y coordinate inside viewport
     u32 y = 0;
-    for (; y < lines.len && y < rows_num - 1; y += 1) {
-      cmd_buf.write(lines.ptr[y].data.crop(cols_num));
+
+    // line index which is drawn at current y coordinate
+    usz j = vy;
+    while (y < rows_num - 1 && j < lines.len) {
+      cmd_buf.write(lines.ptr[j].data.crop(cols_num));
       cmd_buf.nl();
+
+      y += 1;
+      j += 1;
+    }
+
+    // draw last line without newline at the end
+    if (y == rows_num - 1 && j < lines.len) {
+      cmd_buf.write(lines.ptr[j].data.crop(cols_num));
     }
 
     // for (; y < rows_num - 1; y += 1) {
@@ -425,6 +439,22 @@ struct Editor {
     // buf.write(macro_static_str(", rows = "));
     // buf.format_dec(rows_num);
     // cmd_buf.write(buf.chunk());
+  }
+
+  method void move_viewport_up() noexcept {
+    if (vy == 0) {
+      return;
+    }
+    vy -= 1;
+    full_viewport_upd_flag = true;
+  }
+
+  method void move_viewport_down() noexcept {
+    if (vy >= lines.len - 1) {
+      return;
+    }
+    vy += 1;
+    full_viewport_upd_flag = true;
   }
 
   method void move_cursor_right() noexcept {
@@ -443,6 +473,7 @@ struct Editor {
 
   method void move_cursor_up() noexcept {
     if (cy == 0) {
+      move_viewport_up();
       return;
     }
     cy -= 1;
@@ -450,6 +481,7 @@ struct Editor {
 
   method void move_cursor_down() noexcept {
     if (cy >= rows_num - 1) {
+      move_viewport_down();
       return;
     }
     cy += 1;
@@ -459,11 +491,42 @@ struct Editor {
 
   method void move_cursor_bot() noexcept { cy = rows_num - 1; }
 
+  method void jump_viewport_up() noexcept {
+    if (vy == 0) {
+      return;
+    }
+
+    if (vy < viewport_page_stride) {
+      vy = 0;
+    } else {
+      vy -= viewport_page_stride;
+    }
+    full_viewport_upd_flag = true;
+  }
+
+  method void jump_viewport_down() noexcept {
+    if (vy >= lines.len - 1) {
+      return;
+    }
+
+    if (vy + viewport_page_stride > lines.len - 1) {
+      vy = cast(u32, lines.len) - 1;
+    } else {
+      vy += viewport_page_stride;
+    }
+    full_viewport_upd_flag = true;
+  }
+
   method void update_cursor_position() noexcept {
     cmd_buf.change_cursor_position(cx, cy);
   }
 
   method void update_window() noexcept {
+    if (full_viewport_upd_flag) {
+      clear_window();
+      draw_text();
+      full_viewport_upd_flag = false;
+    }
     update_cursor_position();
 
     cmd_buf.flush();
@@ -591,16 +654,15 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
     }
 
     case Editor::Seq::PAGE_UP: {
-      e.move_cursor_top();
+      e.jump_viewport_up();
       break;
     }
     case Editor::Seq::PAGE_DOWN: {
-      e.move_cursor_bot();
+      e.jump_viewport_down();
       break;
     }
 
     case Editor::Seq::DELETE: {
-      e.move_cursor_top();
       break;
     }
 
