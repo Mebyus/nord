@@ -13,7 +13,7 @@
 
 // Modify global variable to be bound to translation unit
 #define global static
-#define persistent static
+#define persist static
 
 // Macro for type cast
 #define cast(T, x) (T)(x)
@@ -31,13 +31,23 @@
 #define method
 
 // Mark struct or class constructor
-#define con
+#define let
 
 // Mark struct or class destructor
 #define des ~
 
 // Macro to compute chunk size in bytes to hold n elements of type T
 #define chunk_size(T, n) ((n) * sizeof(T))
+
+// Dummy usage for variable, argument or constant
+//
+// Suppresses compiler warnings
+#define nop_use(x) (void)(x)
+
+[[noreturn]]
+fn void unreachable() noexcept {
+  __builtin_unreachable();
+}
 
 typedef unsigned char u8;
 typedef unsigned short int u16;
@@ -56,6 +66,9 @@ typedef double f64;
 // represent size of any memory region (or offset in memory region)
 typedef u64 usz;
 typedef i64 isz;
+
+// Type for performing arbitrary arithmetic pointer operations
+typedef usz uptr;
 
 template <typename T>
 fn inline T min(T a, T b) noexcept {
@@ -80,6 +93,8 @@ fn inline void swap(T& a, T& b) noexcept {
   b = x;
 }
 
+// fn void must(bool condition, ) noexcept;
+
 // Copies n bytes of memory from src to dst
 //
 // Implementation is platform-specific and will likely wrap
@@ -93,6 +108,8 @@ struct error {
 
   //
   usz kind;
+
+  method bool is_nil() noexcept { return kind == 0; }
 };
 
 // Memory Chunk
@@ -116,9 +133,9 @@ struct mc {
   usz len;
 
   // Create nil memory chunk
-  con mc() noexcept : ptr(nil), len(0) {}
+  let mc() noexcept : ptr(nil), len(0) {}
 
-  con mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
+  let mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
 
   // Fill chunk with zero bytes
   method void zero() noexcept;
@@ -195,7 +212,7 @@ struct mc {
   //
   // Returns number of bytes written. If there is not enough space
   // in chunk zero will be returned, but chunk will not be untouched
-  method usz format_dec(u64 x) noexcept;
+  method usz fmt_dec(u64 x) noexcept;
 
   // Write number (i64) in decimal format to chunk in utf-8 encoding
   //
@@ -204,9 +221,9 @@ struct mc {
   //
   // Returns number of bytes written. If there is not enough space
   // in chunk zero will be returned, but chunk will not be untouched
-  method usz format_dec(i64 x) noexcept {
+  method usz fmt_dec(i64 x) noexcept {
     if (x >= 0) {
-      return format_dec(cast(u64, x));
+      return fmt_dec(cast(u64, x));
     }
 
     if (len < 2) {
@@ -214,7 +231,7 @@ struct mc {
     }
     unsafe_write('-');
     x = -x;
-    var usz w = slice_from(1).format_dec(cast(u64, x));
+    var usz w = slice_from(1).fmt_dec(cast(u64, x));
     if (w == 0) {
       return 0;
     }
@@ -222,8 +239,8 @@ struct mc {
   }
 
   // Same as format_dec, but unused bytes will be filled with padding
-  method usz pad_format_dec(u64 x) noexcept {
-    var usz w = format_dec(x);
+  method usz pad_fmt_dec(u64 x) noexcept {
+    var usz w = fmt_dec(x);
     if (w == 0) {
       return 0;
     }
@@ -242,7 +259,7 @@ struct mc {
   //
   // Returns number of bytes written. If there is not enough space
   // in chunk zero will be returned, but chunk will not be untouched
-  method usz format_bin_delim(u32 x) noexcept;
+  method usz fmt_bin_delim(u32 x) noexcept;
 };
 
 // shorthand for C string to memory chunk literal conversion
@@ -268,7 +285,7 @@ fn internal inline u8 decimal_digit_to_charcode(u8 digit) noexcept {
   return digit + cast(u8, '0');
 }
 
-method usz mc::format_dec(u64 x) noexcept {
+method usz mc::fmt_dec(u64 x) noexcept {
   if (x < 10) {
     ptr[0] = decimal_digit_to_charcode((u8)x);
     return 1;
@@ -301,7 +318,7 @@ method usz mc::format_dec(u64 x) noexcept {
   return i;
 }
 
-method usz mc::format_bin_delim(u32 x) noexcept {
+method usz mc::fmt_bin_delim(u32 x) noexcept {
   // 32 binary digits + 3 spaces
   const usz l = 8 * sizeof(u32) + 3;
   if (l > len) {
@@ -366,11 +383,11 @@ struct bb {
   usz len;
   usz cap;
 
-  con bb() noexcept : ptr(nil), len(0), cap(0) {}
+  let bb() noexcept : ptr(nil), len(0), cap(0) {}
 
-  con bb(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
+  let bb(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
 
-  con bb(u8* bytes, usz n) noexcept : ptr(bytes), len(0), cap(n) {}
+  let bb(u8* bytes, usz n) noexcept : ptr(bytes), len(0), cap(n) {}
 
   method bool is_empty() noexcept { return len == 0; }
 
@@ -430,32 +447,32 @@ struct bb {
     len += sizeof(f32);
   }
 
-  method usz format_dec(u32 x) noexcept { return format_dec(cast(u64, x)); }
+  method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
 
-  method usz format_dec(u64 x) noexcept {
+  method usz fmt_dec(u64 x) noexcept {
     if (is_full()) {
       return 0;
     }
 
     var mc t = tail();
-    var usz w = t.format_dec(x);
+    var usz w = t.fmt_dec(x);
     len += w;
     return w;
   }
 
-  method usz format_dec(i64 x) noexcept {
+  method usz fmt_dec(i64 x) noexcept {
     var mc t = tail();
     if (t.is_nil()) {
       return 0;
     }
-    var usz w = t.format_dec(x);
+    var usz w = t.fmt_dec(x);
     len += w;
     return w;
   }
 
-  method usz format_bin_delim(u32 x) noexcept {
+  method usz fmt_bin_delim(u32 x) noexcept {
     var mc t = tail();
-    var usz w = t.format_bin_delim(x);
+    var usz w = t.fmt_bin_delim(x);
     len += w;
     return w;
   }
@@ -464,6 +481,35 @@ struct bb {
 
   method mc tail() noexcept { return mc(tip(), rem()); }
 };
+
+// Describes location in source code
+struct src_loc {
+  mc file;
+  u32 line;
+
+  let src_loc(mc f, u32 l) noexcept : file(f), line(l) {}
+
+  method usz fmt(mc c) noexcept {
+    var bb buf = bb(c);
+
+    buf.write(file);
+    buf.write(':');
+    buf.fmt_dec(line);
+
+    return buf.len;
+  }
+};
+
+#define macro_src_loc() src_loc(macro_src_file, macro_src_line)
+
+fn void check_must(bool condition, src_loc loc) noexcept {
+  if (condition) {
+    return;
+  }
+
+  nop_use(loc);
+  abort();
+}
 
 // Stores elements and their number together as a single data structure
 template <typename T>
@@ -474,9 +520,9 @@ struct chunk {
   // Number of elements in chunk
   usz len;
 
-  con chunk() noexcept : ptr(nil), len(0) {}
+  let chunk() noexcept : ptr(nil), len(0) {}
 
-  con chunk(T* elems, usz n) noexcept : ptr(elems), len(n) {}
+  let chunk(T* elems, usz n) noexcept : ptr(elems), len(n) {}
 
   method bool is_nil() noexcept { return len == 0; }
 
@@ -499,14 +545,14 @@ struct cstr {
   // pointer is len + 1
   usz len;
 
-  con cstr() noexcept : ptr(nil), len(0) {}
+  let cstr() noexcept : ptr(nil), len(0) {}
 
   // This constructor is deliberately unsafe. Use it only
   // on C strings which come from trusted source
   //
   // For safe version with proper error-checking refer to
   // function try_parse_cstr
-  con cstr(u8* s) noexcept {
+  let cstr(u8* s) noexcept {
     var usz i = 0;
     while (s[i] != 0) {
       i += 1;
@@ -518,7 +564,7 @@ struct cstr {
   // Use this constructor if length of C string is already
   // known before the call. Second argument is number of
   // bytes in string, not including zero terminator
-  con cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
+  let cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
 
   method bool is_nil() noexcept { return len == 0; }
 
@@ -545,9 +591,9 @@ struct FileReadResult {
 
   Code code;
 
-  con FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
-  con FileReadResult(Code c) noexcept : data(mc()), code(c) {}
-  con FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
+  let FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
+  let FileReadResult(Code c) noexcept : data(mc()), code(c) {}
+  let FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
 
   method bool is_ok() noexcept { return code == Code::Ok; }
   method bool is_err() noexcept { return code != Code::Ok; }

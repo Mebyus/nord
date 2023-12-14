@@ -110,7 +110,7 @@ fn void fatal(mc msg, mc filename, u32 line) noexcept {
 
   buf.write(filename);
   buf.write(macro_static_str(":"));
-  buf.format_dec(line);
+  buf.fmt_dec(line);
 
   buf.write(macro_static_str("\npanic: "));
   buf.write(msg);
@@ -178,9 +178,9 @@ struct CommandBuffer {
 
   bb s;
 
-  con CommandBuffer() noexcept {}
+  let CommandBuffer() noexcept {}
 
-  con CommandBuffer(usz initial_size) noexcept {
+  let CommandBuffer(usz initial_size) noexcept {
     var u8* bytes = (u8*)malloc(initial_size);
     if (bytes == nil) {
       panic(macro_static_str("failed to allocate memory for command buffer"));
@@ -217,9 +217,9 @@ struct CommandBuffer {
     // prepare command string
     bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
     buf.unsafe_write(macro_static_str("\x1b["));
-    buf.format_dec(y + 1);
+    buf.fmt_dec(y + 1);
     buf.unsafe_write(cast(u8, ';'));
-    buf.format_dec(x + 1);
+    buf.fmt_dec(x + 1);
     buf.unsafe_write(cast(u8, 'H'));
 
     // write prepared command to buffer
@@ -305,7 +305,7 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
 }
 
 fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
-  var usz n = buf.format_dec(line_number);
+  var usz n = buf.fmt_dec(line_number);
 
   for (usz i = 0; i < width - n - 3; i++) {
     buf.write(' ');
@@ -368,7 +368,7 @@ struct Editor {
 
   bool full_viewport_upd_flag;
 
-  con Editor() noexcept {}
+  let Editor() noexcept {}
 
   method void init() noexcept {
     init_terminal();
@@ -428,7 +428,7 @@ struct Editor {
     var bb buf = bb(gutter_buf, 16);
 
     var u32 max_line_number = min(vy + rows_num, cast(u32, lines.len));
-    var usz line_number_width = buf.format_dec(max_line_number);
+    var usz line_number_width = buf.fmt_dec(max_line_number);
     buf.reset();
 
     // gutter has format "xxxx | "
@@ -714,6 +714,9 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
+  unreachable();
+  // check_must(false, macro_src_loc());
+
   if (argc < 2) {
     e.init();
   } else {
