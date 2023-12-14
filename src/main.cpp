@@ -249,7 +249,7 @@ struct TextLine {
   mc data;
 
   // line number, one-based
-  u32 num;
+  // u32 num;
 };
 
 var global TextLine lines_buffer[1 << 10];
@@ -276,7 +276,7 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
     if (c == '\n') {
       var mc line = text.slice(start, end);
 
-      lines_buffer[j].num = cast(u32, j + 1);
+      // lines_buffer[j].num = cast(u32, j + 1);
       lines_buffer[j].data = line;
 
       j += 1;
@@ -296,12 +296,26 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
   // save last line
   var mc line = text.slice(start, end);
 
-  lines_buffer[j].num = cast(u32, j + 1);
+  // lines_buffer[j].num = cast(u32, j + 1);
   lines_buffer[j].data = line;
 
   j += 1;
 
   return chunk<TextLine>(lines_buffer, j);
+}
+
+fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
+  var usz n = buf.format_dec(line_number);
+
+  for (usz i = 0; i < width - n - 3; i++) {
+    buf.write(' ');
+  }
+
+  buf.write(' ');
+  buf.write('|');
+  buf.write(' ');
+
+  return buf.chunk();
 }
 
 struct Editor {
@@ -409,13 +423,26 @@ struct Editor {
   }
 
   method void draw_text() noexcept {
+    var dirty u8 gutter_buf[16];
+    var bb buf = bb(gutter_buf, 16);
+
+    var u32 max_line_number = min(vy + rows_num, cast(u32, lines.len));
+    var usz line_number_width = buf.format_dec(max_line_number);
+    buf.reset();
+
+    // gutter has format "xxxx | "
+    // min width for line number is 4
+    var usz gutter_width = max(cast(usz, 4 + 3), line_number_width + 3);
+
     // y coordinate inside viewport
     u32 y = 0;
 
     // line index which is drawn at current y coordinate
     usz j = vy;
     while (y < rows_num - 1 && j < lines.len) {
-      cmd_buf.write(lines.ptr[j].data.crop(cols_num));
+      mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
+      cmd_buf.write(line_gutter);
+      cmd_buf.write(lines.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
       cmd_buf.nl();
 
       y += 1;
@@ -424,7 +451,9 @@ struct Editor {
 
     // draw last line without newline at the end
     if (y == rows_num - 1 && j < lines.len) {
-      cmd_buf.write(lines.ptr[j].data.crop(cols_num));
+      mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
+      cmd_buf.write(line_gutter);
+      cmd_buf.write(lines.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
     }
 
     // for (; y < rows_num - 1; y += 1) {
