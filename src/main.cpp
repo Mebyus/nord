@@ -394,6 +394,9 @@ struct Editor {
     init_terminal();
 
     cmd_buf.hide_cursor();
+    clear_window();
+    cmd_buf.write(macro_static_str("\x1b[38;2;100;255;50m"));
+    cmd_buf.write(macro_static_str("\x1b[48;2;32;32;52m"));
     draw_text();
     cmd_buf.show_cursor();
     update_cursor_position();
@@ -412,8 +415,6 @@ struct Editor {
     enter_raw_mode();
 
     cmd_buf = CommandBuffer(COMMAND_BUFFER_INITIAL_SIZE);
-
-    clear_window();
 
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
