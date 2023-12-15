@@ -44,11 +44,6 @@
 // Suppresses compiler warnings
 #define nop_use(x) (void)(x)
 
-[[noreturn]]
-fn void unreachable() noexcept {
-  __builtin_unreachable();
-}
-
 typedef unsigned char u8;
 typedef unsigned short int u16;
 typedef unsigned int u32;
@@ -213,6 +208,8 @@ struct mc {
   // Returns number of bytes written. If there is not enough space
   // in chunk zero will be returned, but chunk will not be untouched
   method usz fmt_dec(u64 x) noexcept;
+
+  method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
 
   // Write number (i64) in decimal format to chunk in utf-8 encoding
   //
@@ -477,10 +474,22 @@ struct bb {
     return w;
   }
 
-  method mc chunk() noexcept { return mc(ptr, len); }
+  // Returns Memory Chunk which is occupied by actual data
+  // inside Bytes Buffer
+  method mc head() noexcept { return mc(ptr, len); }
 
+  // Returns Memory Chunk which is a portion of Bytes Buffer
+  // that is available for writes
   method mc tail() noexcept { return mc(tip(), rem()); }
 };
+
+fn void stdout_write(mc c) noexcept;
+
+fn void stderr_write(mc c) noexcept;
+
+fn void stdout_write_all(mc c) noexcept;
+
+fn void stderr_write_all(mc c) noexcept;
 
 // Describes location in source code
 struct src_loc {
@@ -498,18 +507,41 @@ struct src_loc {
 
     return buf.len;
   }
+
+  method void fmt_to_stderr() noexcept {
+    var dirty u8 b[16];
+    var bb buf = bb(b, sizeof(b));
+    buf.write(':');
+    buf.fmt_dec(line);
+
+    stderr_write_all(file);
+    stderr_write_all(buf.head());
+  }
 };
 
 #define macro_src_loc() src_loc(macro_src_file, macro_src_line)
+
+[[noreturn]] fn void check_unreachable(src_loc loc) noexcept {
+  loc.fmt_to_stderr();
+  stderr_write_all(macro_static_str(" <-- touched unreachable code\n"));
+
+  __builtin_unreachable();
+}
 
 fn void check_must(bool condition, src_loc loc) noexcept {
   if (condition) {
     return;
   }
 
-  nop_use(loc);
+  loc.fmt_to_stderr();
+  stderr_write_all(macro_static_str(" <-- assert failed\n"));
+
   abort();
 }
+
+#define unreachable() check_unreachable(macro_src_loc())
+
+#define must(x) check_must(x, macro_src_loc())
 
 // Stores elements and their number together as a single data structure
 template <typename T>

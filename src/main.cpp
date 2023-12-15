@@ -23,6 +23,24 @@ fn void copy(u8* src, u8* dst, usz n) noexcept {
 }
 
 fn internal void fd_write(i32 fd, mc c) noexcept {
+  var isz n = write(fd, c.ptr, c.len);
+  if (n < 0) {
+    // TODO: add error handling
+    return;
+  }
+}
+
+fn void stdout_write(mc c) noexcept {
+  const i32 stdout_fd = 1;
+  fd_write(stdout_fd, c);
+}
+
+fn void stderr_write(mc c) noexcept {
+  const i32 stderr_fd = 2;
+  fd_write(stderr_fd, c);
+}
+
+fn internal void fd_write_all(i32 fd, mc c) noexcept {
   var u8* ptr = c.ptr;
   var usz len = c.len;
   while (len > 0) {
@@ -38,7 +56,7 @@ fn internal void fd_write(i32 fd, mc c) noexcept {
 }
 
 // Returns number of bytes read from file descriptor
-fn internal usz fd_read(i32 fd, mc c) noexcept {
+fn internal usz fd_read_all(i32 fd, mc c) noexcept {
   var bb buf = bb(c);
   while (!buf.is_full()) {
     var isz n = read(fd, buf.tip(), buf.rem());
@@ -50,14 +68,14 @@ fn internal usz fd_read(i32 fd, mc c) noexcept {
   return buf.len;
 }
 
-fn internal void stdout_write(mc c) noexcept {
+fn void stdout_write_all(mc c) noexcept {
   const i32 stdout_fd = 1;
-  fd_write(stdout_fd, c);
+  fd_write_all(stdout_fd, c);
 }
 
-fn internal void stderr_write(mc c) noexcept {
+fn void stderr_write_all(mc c) noexcept {
   const i32 stderr_fd = 2;
-  fd_write(stderr_fd, c);
+  fd_write_all(stderr_fd, c);
 }
 
 fn FileReadResult read_file(cstr filename) noexcept {
@@ -85,7 +103,7 @@ fn FileReadResult read_file(cstr filename) noexcept {
   }
 
   var mc data = mc(bytes, size);
-  var usz n = fd_read(fd, data);
+  var usz n = fd_read_all(fd, data);
   close(fd);
   if (n == 0) {
     free(data.ptr);
@@ -116,7 +134,7 @@ fn void fatal(mc msg, mc filename, u32 line) noexcept {
   buf.write(msg);
   buf.write(macro_static_str("\n"));
 
-  stderr_write(buf.chunk());
+  stderr_write_all(buf.head());
 
   i32 number_of_entries =
       backtrace(cast(void**, backtrace_buffer), MAX_BACKTRACE_LEVEL);
@@ -223,7 +241,7 @@ struct CommandBuffer {
     buf.unsafe_write(cast(u8, 'H'));
 
     // write prepared command to buffer
-    write(buf.chunk());
+    write(buf.head());
   }
 
   method void hide_cursor() noexcept { write(macro_static_str("\x1b[?25l")); }
@@ -236,7 +254,7 @@ struct CommandBuffer {
   method void reset() noexcept { s.reset(); }
 
   method void flush() noexcept {
-    stdout_write(s.chunk());
+    stdout_write_all(s.head());
     reset();
   }
 };
@@ -315,7 +333,7 @@ fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
   buf.write('|');
   buf.write(' ');
 
-  return buf.chunk();
+  return buf.head();
 }
 
 struct Editor {
@@ -703,7 +721,7 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
       break;
     }
     case Editor::Seq::REGULAR: {
-      panic(macro_static_str("unreachable"));
+      unreachable();
     }
     default: {
       break;
@@ -714,9 +732,6 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  unreachable();
-  // check_must(false, macro_src_loc());
-
   if (argc < 2) {
     e.init();
   } else {
@@ -729,6 +744,5 @@ fn i32 main(i32 argc, u8** argv) noexcept {
     handle_key_input(k);
   }
 
-  panic(macro_static_str("unreachable"));
-  return 0;
+  unreachable();
 }
