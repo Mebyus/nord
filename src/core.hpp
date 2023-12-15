@@ -66,7 +66,7 @@ typedef i64 isz;
 typedef usz uptr;
 
 template <typename T>
-fn inline T min(T a, T b) noexcept {
+fn inline constexpr T min(T a, T b) noexcept {
   if (a < b) {
     return a;
   }
@@ -74,7 +74,7 @@ fn inline T min(T a, T b) noexcept {
 }
 
 template <typename T>
-fn inline T max(T a, T b) noexcept {
+fn inline constexpr T max(T a, T b) noexcept {
   if (a < b) {
     return b;
   }
@@ -128,12 +128,12 @@ struct mc {
   usz len;
 
   // Create nil memory chunk
-  let mc() noexcept : ptr(nil), len(0) {}
+  let constexpr mc() noexcept : ptr(nil), len(0) {}
 
   let mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
 
   // Fill chunk with zero bytes
-  method void zero() noexcept;
+  method void clear() noexcept;
 
   // Fill chunk with specified byte
   method void fill(u8 x) noexcept;
@@ -158,7 +158,11 @@ struct mc {
   method bool is_nil() noexcept { return len == 0; }
 
   method usz write(u8* bytes, usz n) noexcept {
-    var usz w = min(n, len);
+    const usz w = min(n, len);
+    if (w == 0) {
+      return 0;
+    }
+
     copy(bytes, ptr, w);
     return w;
   }
@@ -176,6 +180,11 @@ struct mc {
       return 0;
     }
     return unsafe_write(x);
+  }
+
+  method usz unsafe_write(u8* bytes, usz n) noexcept {
+    copy(bytes, ptr, n);
+    return n;
   }
 
   method usz unsafe_write(mc c) noexcept {
@@ -210,6 +219,8 @@ struct mc {
   method usz fmt_dec(u64 x) noexcept;
 
   method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
+
+  method usz fmt_dec(u8 x) noexcept;
 
   // Write number (i64) in decimal format to chunk in utf-8 encoding
   //
@@ -278,8 +289,220 @@ internal const u8 small_decimals_string[] =
     "80818283848586878889"
     "90919293949596979899";
 
+internal const u8 byte_size_decimals_string[] =
+    "100"
+    "101"
+    "102"
+    "103"
+    "104"
+    "105"
+    "106"
+    "107"
+    "108"
+    "109"
+    "110"
+    "111"
+    "112"
+    "113"
+    "114"
+    "115"
+    "116"
+    "117"
+    "118"
+    "119"
+    "120"
+    "121"
+    "122"
+    "123"
+    "124"
+    "125"
+    "126"
+    "127"
+    "128"
+    "129"
+    "130"
+    "131"
+    "132"
+    "133"
+    "134"
+    "135"
+    "136"
+    "137"
+    "138"
+    "139"
+    "140"
+    "141"
+    "142"
+    "143"
+    "144"
+    "145"
+    "146"
+    "147"
+    "148"
+    "149"
+    "150"
+    "151"
+    "152"
+    "153"
+    "154"
+    "155"
+    "156"
+    "157"
+    "158"
+    "159"
+    "160"
+    "161"
+    "162"
+    "163"
+    "164"
+    "165"
+    "166"
+    "167"
+    "168"
+    "169"
+    "170"
+    "171"
+    "172"
+    "173"
+    "174"
+    "175"
+    "176"
+    "177"
+    "178"
+    "179"
+    "180"
+    "181"
+    "182"
+    "183"
+    "184"
+    "185"
+    "186"
+    "187"
+    "188"
+    "189"
+    "190"
+    "191"
+    "192"
+    "193"
+    "194"
+    "195"
+    "196"
+    "197"
+    "198"
+    "199"
+    "200"
+    "201"
+    "202"
+    "203"
+    "204"
+    "205"
+    "206"
+    "207"
+    "208"
+    "209"
+    "210"
+    "211"
+    "212"
+    "213"
+    "214"
+    "215"
+    "216"
+    "217"
+    "218"
+    "219"
+    "220"
+    "221"
+    "222"
+    "223"
+    "224"
+    "225"
+    "226"
+    "227"
+    "228"
+    "229"
+    "230"
+    "231"
+    "232"
+    "233"
+    "234"
+    "235"
+    "236"
+    "237"
+    "238"
+    "239"
+    "240"
+    "241"
+    "242"
+    "243"
+    "244"
+    "245"
+    "246"
+    "247"
+    "248"
+    "249"
+    "250"
+    "251"
+    "252"
+    "253"
+    "254"
+    "255";
+
+struct StringLookupEntry {
+  u16 offset;
+  u16 len;
+};
+
+internal const StringLookupEntry byte_decimal_lookup_table[] = {
+    {2, 1},   {5, 1},   {8, 1},   {11, 1},  {14, 1},  {17, 1},  {20, 1},
+    {23, 1},  {26, 1},  {29, 1},  {31, 2},  {34, 2},  {37, 2},  {40, 2},
+    {43, 2},  {46, 2},  {49, 2},  {52, 2},  {55, 2},  {58, 2},  {61, 2},
+    {64, 2},  {67, 2},  {70, 2},  {73, 2},  {76, 2},  {79, 2},  {82, 2},
+    {85, 2},  {88, 2},  {91, 2},  {94, 2},  {97, 2},  {100, 2}, {103, 2},
+    {106, 2}, {109, 2}, {112, 2}, {115, 2}, {118, 2}, {121, 2}, {124, 2},
+    {127, 2}, {130, 2}, {133, 2}, {136, 2}, {139, 2}, {142, 2}, {145, 2},
+    {148, 2}, {151, 2}, {154, 2}, {157, 2}, {160, 2}, {163, 2}, {166, 2},
+    {169, 2}, {172, 2}, {175, 2}, {178, 2}, {181, 2}, {184, 2}, {187, 2},
+    {190, 2}, {193, 2}, {196, 2}, {199, 2}, {202, 2}, {205, 2}, {208, 2},
+    {211, 2}, {214, 2}, {217, 2}, {220, 2}, {223, 2}, {226, 2}, {229, 2},
+    {232, 2}, {235, 2}, {238, 2}, {241, 2}, {244, 2}, {247, 2}, {250, 2},
+    {253, 2}, {256, 2}, {259, 2}, {262, 2}, {265, 2}, {268, 2}, {271, 2},
+    {274, 2}, {277, 2}, {280, 2}, {283, 2}, {286, 2}, {289, 2}, {292, 2},
+    {295, 2}, {298, 2}, {0, 3},   {3, 3},   {6, 3},   {9, 3},   {12, 3},
+    {15, 3},  {18, 3},  {21, 3},  {24, 3},  {27, 3},  {30, 3},  {33, 3},
+    {36, 3},  {39, 3},  {42, 3},  {45, 3},  {48, 3},  {51, 3},  {54, 3},
+    {57, 3},  {60, 3},  {63, 3},  {66, 3},  {69, 3},  {72, 3},  {75, 3},
+    {78, 3},  {81, 3},  {84, 3},  {87, 3},  {90, 3},  {93, 3},  {96, 3},
+    {99, 3},  {102, 3}, {105, 3}, {108, 3}, {111, 3}, {114, 3}, {117, 3},
+    {120, 3}, {123, 3}, {126, 3}, {129, 3}, {132, 3}, {135, 3}, {138, 3},
+    {141, 3}, {144, 3}, {147, 3}, {150, 3}, {153, 3}, {156, 3}, {159, 3},
+    {162, 3}, {165, 3}, {168, 3}, {171, 3}, {174, 3}, {177, 3}, {180, 3},
+    {183, 3}, {186, 3}, {189, 3}, {192, 3}, {195, 3}, {198, 3}, {201, 3},
+    {204, 3}, {207, 3}, {210, 3}, {213, 3}, {216, 3}, {219, 3}, {222, 3},
+    {225, 3}, {228, 3}, {231, 3}, {234, 3}, {237, 3}, {240, 3}, {243, 3},
+    {246, 3}, {249, 3}, {252, 3}, {255, 3}, {258, 3}, {261, 3}, {264, 3},
+    {267, 3}, {270, 3}, {273, 3}, {276, 3}, {279, 3}, {282, 3}, {285, 3},
+    {288, 3}, {291, 3}, {294, 3}, {297, 3}, {300, 3}, {303, 3}, {306, 3},
+    {309, 3}, {312, 3}, {315, 3}, {318, 3}, {321, 3}, {324, 3}, {327, 3},
+    {330, 3}, {333, 3}, {336, 3}, {339, 3}, {342, 3}, {345, 3}, {348, 3},
+    {351, 3}, {354, 3}, {357, 3}, {360, 3}, {363, 3}, {366, 3}, {369, 3},
+    {372, 3}, {375, 3}, {378, 3}, {381, 3}, {384, 3}, {387, 3}, {390, 3},
+    {393, 3}, {396, 3}, {399, 3}, {402, 3}, {405, 3}, {408, 3}, {411, 3},
+    {414, 3}, {417, 3}, {420, 3}, {423, 3}, {426, 3}, {429, 3}, {432, 3},
+    {435, 3}, {438, 3}, {441, 3}, {444, 3}, {447, 3}, {450, 3}, {453, 3},
+    {456, 3}, {459, 3}, {462, 3}, {465, 3},
+};
+
 fn internal inline u8 decimal_digit_to_charcode(u8 digit) noexcept {
   return digit + cast(u8, '0');
+}
+
+method usz mc::fmt_dec(u8 x) noexcept {
+  var StringLookupEntry entry = byte_decimal_lookup_table[x];
+  if (len < entry.len) {
+    return 0;
+  }
+  unsafe_write(cast(u8*, byte_size_decimals_string) + entry.offset, entry.len);
+  return entry.len;
 }
 
 method usz mc::fmt_dec(u64 x) noexcept {
@@ -367,6 +590,24 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   return l;
 }
 
+// Two Memory Chunks are considered equal if they have
+// identical length and bytes content
+fn bool compare_equal(mc a, mc b) noexcept {
+  if (a.len != b.len) {
+    return false;
+  }
+
+  const usz len = a.len;
+
+  for (usz i = 0; i < len; i += 1) {
+    if (a.ptr[i] != b.ptr[i]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Bytes Buffer
 //
 // Accumulates multiple writes into single continuous memory region.
@@ -377,10 +618,14 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
 // Buffer is much alike memory chunk in terms of memory ownership
 struct bb {
   u8* ptr;
+
+  // number of bytes currently stored in buffer
   usz len;
+
+  // buffer capacity i.e. maximum number of bytes it can hold
   usz cap;
 
-  let bb() noexcept : ptr(nil), len(0), cap(0) {}
+  let constexpr bb() noexcept : ptr(nil), len(0), cap(0) {}
 
   let bb(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
 
@@ -427,6 +672,11 @@ struct bb {
     return c.len;
   }
 
+  // Use for writing character literals like this
+  //
+  // buf.unsafe_write('L');
+  method void unsafe_write(char x) noexcept { unsafe_write(cast(u8, x)); }
+
   method void unsafe_write(u8 x) noexcept {
     ptr[len] = x;
     len += sizeof(u8);
@@ -442,6 +692,13 @@ struct bb {
     var f32* p = cast(f32*, tip());
     *p = x;
     len += sizeof(f32);
+  }
+
+  method usz fmt_dec(u8 x) noexcept {
+    var mc t = tail();
+    var usz w = t.fmt_dec(x);
+    len += w;
+    return w;
   }
 
   method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }

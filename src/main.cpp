@@ -19,7 +19,19 @@ fn void copy(u8* src, u8* dst, usz n) noexcept {
     }
     return;
   }
+
   memcpy(dst, src, n);
+}
+
+method void mc::clear() noexcept {
+  if (len <= 16) {
+    for (usz i = 0; i < len; i += 1) {
+      ptr[i] = 0;
+    }
+    return;
+  }
+
+  memset(ptr, 0, len);
 }
 
 fn internal void fd_write(i32 fd, mc c) noexcept {
@@ -189,6 +201,14 @@ fn internal struct winsize get_viewport_size() noexcept {
   return ws;
 }
 
+struct Color {
+  u8 red;
+  u8 green;
+  u8 blue;
+
+  let Color(u8 r, u8 g, u8 b) noexcept : red(r), green(g), blue(b) {}
+};
+
 #define COMMAND_SKETCH_BUFFER_SIZE 32
 
 struct CommandBuffer {
@@ -233,14 +253,43 @@ struct CommandBuffer {
 
   method void change_cursor_position(u32 x, u32 y) noexcept {
     // prepare command string
-    bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+
     buf.unsafe_write(macro_static_str("\x1b["));
     buf.fmt_dec(y + 1);
-    buf.unsafe_write(cast(u8, ';'));
+    buf.unsafe_write(';');
     buf.fmt_dec(x + 1);
-    buf.unsafe_write(cast(u8, 'H'));
+    buf.unsafe_write('H');
 
     // write prepared command to buffer
+    write(buf.head());
+  }
+
+  method void set_text_color(Color color) noexcept {
+    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+
+    buf.write(macro_static_str("\x1b[38;2;"));
+    buf.fmt_dec(color.red);
+    buf.unsafe_write(';');
+    buf.fmt_dec(color.green);
+    buf.unsafe_write(';');
+    buf.fmt_dec(color.blue);
+    buf.unsafe_write('m');
+
+    write(buf.head());
+  }
+
+  method void set_background_color(Color color) noexcept {
+    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+
+    buf.write(macro_static_str("\x1b[48;2;"));
+    buf.fmt_dec(color.red);
+    buf.unsafe_write(';');
+    buf.fmt_dec(color.green);
+    buf.unsafe_write(';');
+    buf.fmt_dec(color.blue);
+    buf.unsafe_write('m');
+
     write(buf.head());
   }
 
@@ -325,7 +374,7 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
 fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
   var usz n = buf.fmt_dec(line_number);
 
-  for (usz i = 0; i < width - n - 3; i++) {
+  for (usz i = 0; i < width - n - 3; i += 1) {
     buf.write(' ');
   }
 
@@ -413,8 +462,6 @@ struct Editor {
 
     cmd_buf.hide_cursor();
     clear_window();
-    cmd_buf.write(macro_static_str("\x1b[38;2;100;255;50m"));
-    cmd_buf.write(macro_static_str("\x1b[48;2;32;32;52m"));
     draw_text();
     cmd_buf.show_cursor();
     update_cursor_position();
