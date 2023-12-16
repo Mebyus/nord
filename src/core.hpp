@@ -888,4 +888,28 @@ struct FileReadResult {
   method bool is_err() noexcept { return code != Code::Ok; }
 };
 
+namespace hash {
+
+internal const u64 offset_fnv64 = 14695981039346656037ULL;
+internal const u64 prime_fnv64 = 1099511628211;
+
+struct fnv64a {
+  u64 sum;
+
+  let constexpr fnv64a() noexcept : sum(offset_fnv64) {}
+
+  method void reset() noexcept { sum = offset_fnv64; }
+
+  method void write(mc c) noexcept {
+    var u64 hash = sum;
+    for (usz i = 0; i < c.len; i += 1) {
+      hash ^= cast(u64, c.ptr[i]);
+      hash *= prime_fnv64;
+    }
+    sum = hash;
+  }
+};
+
+}  // namespace hash
+
 #endif  // GUARD_CORE_HPP
