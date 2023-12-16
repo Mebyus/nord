@@ -310,13 +310,105 @@ struct CommandBuffer {
 
 #define COMMAND_BUFFER_INITIAL_SIZE 1 << 14
 
+struct Token {
+  enum struct Kind : u8 {
+    UNKNOWN,
+    DIRECTIVE,
+    KEYWORD_GROUP_1,
+    KEYWORD_GROUP_2,
+    BUILTIN,
+    IDENTIFIER,
+    STRING,
+    CHARACTER,
+    COMMENT,
+    NUMBER,
+    OPERATOR,
+    SPACE,
+    TAB,
+  };
+
+  str lit;
+  Token::Kind kind;
+
+  // true for Tokens for which visual representation is not
+  // the same as their byte sequence in literal
+  bool is_indirect;
+
+  let Token(Token::Kind k, str l) noexcept : lit(l), kind(k), is_indirect(false) {}
+};
+
+internal const Token static_literals_table[] = {
+    Token(Token::Kind::DIRECTIVE, macro_static_str("#define")),
+    Token(Token::Kind::DIRECTIVE, macro_static_str("#include")),
+    Token(Token::Kind::DIRECTIVE, macro_static_str("#ifndef")),
+    Token(Token::Kind::DIRECTIVE, macro_static_str("#undef")),
+
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("var")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("const")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("struct")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("enum")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("fn")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("method")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("let")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("return")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("switch")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("if")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("else")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("while")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("namespace")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("typedef")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("case")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("default")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("continue")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("break")),
+    Token(Token::Kind::KEYWORD_GROUP_1, macro_static_str("do")),
+
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("internal")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("global")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("noexcept")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("dirty")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("sizeof")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("cast")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("constexpr")),
+    Token(Token::Kind::KEYWORD_GROUP_2, macro_static_str("inline")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("u8")),
+    Token(Token::Kind::BUILTIN, macro_static_str("i8")),
+    Token(Token::Kind::BUILTIN, macro_static_str("u16")),
+    Token(Token::Kind::BUILTIN, macro_static_str("i16")),
+    Token(Token::Kind::BUILTIN, macro_static_str("u32")),
+    Token(Token::Kind::BUILTIN, macro_static_str("i32")),
+    Token(Token::Kind::BUILTIN, macro_static_str("u64")),
+    Token(Token::Kind::BUILTIN, macro_static_str("i64")),
+    Token(Token::Kind::BUILTIN, macro_static_str("usz")),
+    Token(Token::Kind::BUILTIN, macro_static_str("isz")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("f32")),
+    Token(Token::Kind::BUILTIN, macro_static_str("f64")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("bool")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("mc")),
+    Token(Token::Kind::BUILTIN, macro_static_str("bb")),
+    Token(Token::Kind::BUILTIN, macro_static_str("error")),
+    Token(Token::Kind::BUILTIN, macro_static_str("str")),
+    Token(Token::Kind::BUILTIN, macro_static_str("cstr")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("nil")),
+    Token(Token::Kind::BUILTIN, macro_static_str("void")),
+    Token(Token::Kind::BUILTIN, macro_static_str("true")),
+    Token(Token::Kind::BUILTIN, macro_static_str("false")),
+
+    Token(Token::Kind::BUILTIN, macro_static_str("must")),
+    Token(Token::Kind::BUILTIN, macro_static_str("unreachable")),
+    Token(Token::Kind::BUILTIN, macro_static_str("panic")),
+    Token(Token::Kind::BUILTIN, macro_static_str("nop_use")),
+};
+
 struct TextLine {
   // bytes that constitutes a line of text, not including
   // trailing newline characters
   mc data;
-
-  // line number, one-based
-  // u32 num;
 };
 
 var global TextLine lines_buffer[1 << 10];
@@ -343,7 +435,6 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
     if (c == '\n') {
       var mc line = text.slice(start, end);
 
-      // lines_buffer[j].num = cast(u32, j + 1);
       lines_buffer[j].data = line;
 
       j += 1;
@@ -521,19 +612,6 @@ struct Editor {
       cmd_buf.write(line_gutter);
       cmd_buf.write(lines.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
     }
-
-    // for (; y < rows_num - 1; y += 1) {
-    //   cmd_buf.write(macro_static_str("#\r\n"));
-    // }
-    // cmd_buf.write(macro_static_str("#"));
-
-    // var dirty u8 s[32];
-    // var bb buf = bb(s, 32);
-    // buf.write(macro_static_str("   cols = "));
-    // buf.format_dec(cols_num);
-    // buf.write(macro_static_str(", rows = "));
-    // buf.format_dec(rows_num);
-    // cmd_buf.write(buf.chunk());
   }
 
   method void move_viewport_up() noexcept {

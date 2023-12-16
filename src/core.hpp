@@ -270,10 +270,12 @@ struct mc {
   method usz fmt_bin_delim(u32 x) noexcept;
 };
 
-// shorthand for C string to memory chunk literal conversion
-#define macro_static_str(s) mc((u8*)u8##s, sizeof(u8##s) - 1)
+typedef mc str;
 
-#define macro_src_file mc((u8*)__FILE__, sizeof(__FILE__) - 1)
+// shorthand for C string to memory chunk literal conversion
+#define macro_static_str(s) str((u8*)u8##s, sizeof(u8##s) - 1)
+
+#define macro_src_file str((u8*)__FILE__, sizeof(__FILE__) - 1)
 #define macro_src_line cast(u32, __LINE__)
 
 internal const u8 max_small_decimal = 99;
