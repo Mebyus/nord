@@ -877,9 +877,6 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  // TODO: add runtime check that all base integer types
-  // have right size. For example sizeof(u64) must be 8 bytes
-
   var Token::Kind a[FLAT_MAP_CAP];
   for (usz i = 0; i < FLAT_MAP_CAP; i += 1) {
     a[i] = Token::Kind::EMPTY;

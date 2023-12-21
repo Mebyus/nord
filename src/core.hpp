@@ -91,8 +91,6 @@ fn inline void swap(T& a, T& b) noexcept {
   b = x;
 }
 
-// fn void must(bool condition, ) noexcept;
-
 // Copies n bytes of memory from src to dst
 //
 // Implementation is platform-specific and will likely wrap
@@ -669,6 +667,9 @@ struct bb {
     return 1;
   }
 
+  // add line feed (aka "newline") character to buffer
+  method usz lf() noexcept { return write('\n'); }
+
   method usz write(mc c) noexcept { return write(c.ptr, c.len); }
 
   method usz unsafe_write(mc c) noexcept {
@@ -704,6 +705,11 @@ struct bb {
     var usz w = t.fmt_dec(x);
     len += w;
     return w;
+  }
+
+  // overload for convenient usage with sizeof() results
+  method usz fmt_dec(unsigned long int x) noexcept {
+    return fmt_dec(cast(u64, x));
   }
 
   method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
@@ -922,6 +928,20 @@ struct fnv64a {
   }
 };
 
+namespace djb2 {
+
+internal const u64 magic = 5381;
+
+fn u64 compute(mc c) noexcept {
+  var u64 h = magic;
+  for (usz i = 0; i < c.len; i += 1) {
+    h = ((h << 5) + h) + c.ptr[i];
+  }
+  return h;
+}
+
+}  // namespace djb2
+
 namespace map {
 
 // This implementation is a port from Go source code
@@ -1030,5 +1050,80 @@ fn u64 compute(u64 seed, mc c) noexcept {
 }  // namespace map
 
 }  // namespace hash
+
+namespace debug {
+
+// caller should supply memory chunk of at least 256 bytes long
+fn mc print_types_info(mc c) noexcept {
+  var bb buf = bb(c);
+
+  buf.write(macro_static_str("\nu8\t\t"));
+  buf.fmt_dec(sizeof(u8));
+
+  buf.write(macro_static_str("\nu16\t\t"));
+  buf.fmt_dec(sizeof(u16));
+
+  buf.write(macro_static_str("\nu32\t\t"));
+  buf.fmt_dec(sizeof(u32));
+
+  buf.write(macro_static_str("\nu64\t\t"));
+  buf.fmt_dec(sizeof(u64));
+
+  buf.write(macro_static_str("\nu128\t\t"));
+  buf.fmt_dec(sizeof(u128));
+
+  buf.lf();
+
+  buf.write(macro_static_str("\ni8\t\t"));
+  buf.fmt_dec(sizeof(i8));
+
+  buf.write(macro_static_str("\ni16\t\t"));
+  buf.fmt_dec(sizeof(i16));
+
+  buf.write(macro_static_str("\ni32\t\t"));
+  buf.fmt_dec(sizeof(i32));
+
+  buf.write(macro_static_str("\ni64\t\t"));
+  buf.fmt_dec(sizeof(i64));
+
+  buf.write(macro_static_str("\ni128\t\t"));
+  buf.fmt_dec(sizeof(i128));
+
+  buf.lf();
+
+  buf.write(macro_static_str("\nf32\t\t"));
+  buf.fmt_dec(sizeof(f32));
+
+  buf.write(macro_static_str("\nf64\t\t"));
+  buf.fmt_dec(sizeof(f64));
+
+  buf.write(macro_static_str("\nf128\t\t"));
+  buf.fmt_dec(sizeof(f128));
+
+  buf.lf();
+
+  buf.write(macro_static_str("\nusz\t\t"));
+  buf.fmt_dec(sizeof(usz));
+
+  buf.write(macro_static_str("\nisz\t\t"));
+  buf.fmt_dec(sizeof(isz));
+
+  buf.write(macro_static_str("\nuptr\t\t"));
+  buf.fmt_dec(sizeof(void*));
+
+  buf.lf();
+
+  buf.write(macro_static_str("\nmc\t\t"));
+  buf.fmt_dec(sizeof(mc));
+
+  buf.write(macro_static_str("\nbb\t\t"));
+  buf.fmt_dec(sizeof(bb));
+
+  buf.lf();
+
+  return buf.head();
+}
+
+}  // namespace debug
 
 #endif  // GUARD_CORE_HPP
