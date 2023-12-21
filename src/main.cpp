@@ -312,7 +312,7 @@ struct CommandBuffer {
 
 struct Token {
   enum struct Kind : u8 {
-    UNKNOWN,
+    EMPTY = 0,
     DIRECTIVE,
     KEYWORD_GROUP_1,
     KEYWORD_GROUP_2,
@@ -334,7 +334,8 @@ struct Token {
   // the same as their byte sequence in literal
   bool is_indirect;
 
-  let Token(Token::Kind k, str l) noexcept : lit(l), kind(k), is_indirect(false) {}
+  let Token(Token::Kind k, str l) noexcept
+      : lit(l), kind(k), is_indirect(false) {}
 };
 
 internal const Token static_literals_table[] = {
@@ -403,6 +404,25 @@ internal const Token static_literals_table[] = {
     Token(Token::Kind::BUILTIN, macro_static_str("unreachable")),
     Token(Token::Kind::BUILTIN, macro_static_str("panic")),
     Token(Token::Kind::BUILTIN, macro_static_str("nop_use")),
+};
+
+#define FLAT_MAP_CAP 256
+#define FLAT_MAP_HASH_MASK 0xFF
+
+// Hash table of static size with no collisions. This is achived
+// by handpicking starting salt for hash function
+struct FlatMap {
+  Token::Kind* elems;
+
+  method bool add(mc key, Token::Kind value) noexcept {
+    const u64 h = hash::map::compute(21, key);
+    const usz pos = h & FLAT_MAP_HASH_MASK;
+
+    const Token::Kind old = elems[pos];
+    elems[pos] = value;
+
+    return old == Token::Kind::EMPTY;
+  }
 };
 
 struct TextLine {
@@ -857,6 +877,30 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
+  // TODO: add runtime check that all base integer types
+  // have right size. For example sizeof(u64) must be 8 bytes
+
+  var Token::Kind a[FLAT_MAP_CAP];
+  for (usz i = 0; i < FLAT_MAP_CAP; i += 1) {
+    a[i] = Token::Kind::EMPTY;
+  }
+
+  var FlatMap m = {.elems = a};
+
+  for (usz i = 0; i < sizeof(static_literals_table); i += 1) {
+    var Token tok = static_literals_table[i];
+
+    var bool ok = m.add(tok.lit, tok.kind);
+
+    if (!ok) {
+      stderr_write(tok.lit);
+      stderr_write(macro_static_str("\n"));
+      exit(1);
+    }
+  }
+  stderr_write(macro_static_str("success\n"));
+  return 0;
+
   if (argc < 2) {
     e.init();
   } else {
