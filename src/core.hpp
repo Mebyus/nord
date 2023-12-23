@@ -68,6 +68,8 @@ typedef i64 isz;
 // Type for performing arbitrary arithmetic pointer operations
 typedef usz uptr;
 
+typedef void* anyptr;
+
 template <typename T>
 fn inline constexpr T min(T a, T b) noexcept {
   if (a < b) {
@@ -742,13 +744,16 @@ struct bb {
     return w;
   }
 
-  // Returns Memory Chunk which is occupied by actual data
-  // inside Bytes Buffer
+  // Returns memory chunk which is occupied by actual data
+  // inside buffer
   method mc head() noexcept { return mc(ptr, len); }
 
-  // Returns Memory Chunk which is a portion of Bytes Buffer
+  // Returns memory chunk which is a portion of buffer
   // that is available for writes
   method mc tail() noexcept { return mc(tip(), rem()); }
+
+  // Returns full body (from zero to capacity) of buffer
+  method mc body() noexcept { return mc(ptr, cap); }
 };
 
 fn void stdout_write(mc c) noexcept;
@@ -811,7 +816,15 @@ fn void check_must(bool condition, src_loc loc) noexcept {
 
 #define must(x) check_must(x, macro_src_loc())
 
-// Stores elements and their number together as a single data structure
+[[noreturn]] fn void fatal(mc msg, src_loc loc) noexcept;
+
+#define panic(msg) fatal(msg, macro_src_loc())
+
+// not implemented macro
+#define noimp() panic(macro_static_str("not implemented"))
+
+// Stores elements (of the same type) in continuous memory region
+// and their number together as a single data structure
 template <typename T>
 struct chunk {
   // Pointer to first element in chunk
@@ -829,6 +842,295 @@ struct chunk {
   method mc as_mc() noexcept { return mc(cast(u8*, ptr), size()); }
 
   method usz size() noexcept { return chunk_size(T, len); }
+
+  method void clear() noexcept { as_mc().clear(); }
+};
+
+// Buffer for storing elements (of the same type) in continuous memory region
+// which allows appending new elements to the end of buffer until buffer
+// capacity is reached
+template <typename T>
+struct buffer {
+  // Pointer to buffer starting position
+  T* ptr;
+
+  // Number of elements stored in buffer
+  usz len;
+
+  // Buffer capacity i.e. maximum number of elements it can hold
+  usz cap;
+
+  let constexpr buffer() noexcept : ptr(nil), len(0), cap(0) {}
+
+  let buffer(chunk<T> c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
+
+  let buffer(T* p, usz n) noexcept : ptr(p), len(0), cap(n) {}
+
+  method bool is_empty() noexcept { return len == 0; }
+
+  method bool is_full() noexcept { return len == cap; }
+
+  method bool is_nil() noexcept { return cap == 0; }
+
+  // Returns number of elements which can be appended to buffer before it is
+  // full
+  method usz rem() noexcept { return cap - len; }
+
+  method void reset() noexcept { len = 0; }
+
+  // Returns chunk which is occupied by actual data
+  // inside buffer
+  method chunk<T> head() noexcept { return chunk<T>(ptr, len); }
+
+  // Append new element to buffer tail
+  method usz append(T elem) noexcept {
+    if (is_full()) {
+      return 0;
+    }
+
+    unsafe_append(elem);
+    return 1;
+  }
+
+  method void unsafe_append(T elem) noexcept {
+    ptr[len] = elem;
+    len += 1;
+  }
+};
+
+namespace mem {
+
+struct Arena {};
+
+struct Gen {
+  let Gen() noexcept {}
+
+  method mc alloc(usz n) noexcept {
+    must(n > 0);
+
+    var u8* ptr = cast(u8*, malloc(n));
+    if (ptr == nil) {
+      return mc();
+    }
+    return mc(ptr, n);
+  }
+
+  template <typename T>
+  method chunk<T> alloc(usz n) noexcept {
+    must(n > 0);
+
+    var T* ptr = cast(T*, malloc(chunk_size(T, n)));
+    if (ptr == nil) {
+      return chunk<T>();
+    }
+    return chunk<T>(ptr, n);
+  }
+
+  method mc realloc(mc c, usz n) noexcept {
+    must(n > 0);
+
+    var u8* ptr = cast(u8*, ::realloc(c.ptr, n));
+    if (ptr == nil) {
+      return mc();
+    }
+    return mc(ptr, n);
+  }
+
+  method void free(mc c) noexcept {
+    must(!c.is_nil());
+
+    ::free(c.ptr);
+  }
+};
+
+var global Gen gpa_global_instance = Gen();
+
+fn Gen* gpa() noexcept {
+  return &gpa_global_instance;
+}
+
+struct alc {
+  enum struct Kind : u8 {
+    Nil,
+    Arena,
+    Gen,
+  };
+
+  anyptr ptr;
+
+  Kind kind;
+
+  let alc() noexcept : ptr(nil), kind(Kind::Nil) {}
+
+  let alc(Arena* arena) noexcept
+      : ptr(cast(anyptr, arena)), kind(Kind::Arena) {}
+
+  let alc(Gen* gen) noexcept : ptr(cast(anyptr, gen)), kind(Kind::Gen) {}
+
+  method bool is_nil() noexcept { return kind == Kind::Nil; }
+
+  method mc alloc(usz n) noexcept {
+    switch (kind) {
+      case Kind::Nil: {
+        panic(macro_static_str("nil allocator"));
+      }
+
+      case Kind::Arena: {
+        noimp();
+      }
+
+      case Kind::Gen: {
+        var Gen* gen = cast(Gen*, ptr);
+        return gen->alloc(n);
+      }
+
+      default: {
+        unreachable();
+      }
+    }
+
+    unreachable();
+  }
+
+  method mc realloc(mc c, usz n) noexcept {
+    switch (kind) {
+      case Kind::Nil: {
+        panic(macro_static_str("nil allocator"));
+      }
+
+      case Kind::Arena: {
+        noimp();
+      }
+
+      case Kind::Gen: {
+        var Gen* gen = cast(Gen*, ptr);
+        return gen->realloc(c, n);
+      }
+
+      default: {
+        unreachable();
+      }
+    }
+
+    unreachable();
+  }
+
+  method void free(mc c) noexcept {
+    switch (kind) {
+      case Kind::Nil: {
+        panic(macro_static_str("nil allocator"));
+      }
+
+      case Kind::Arena: {
+        noimp();
+      }
+
+      case Kind::Gen: {
+        var Gen* gen = cast(Gen*, ptr);
+        gen->free(c);
+        return;
+      }
+
+      default: {
+        unreachable();
+      }
+    }
+
+    unreachable();
+  }
+};
+
+}  // namespace mem
+
+// Dynamically allocated bytes buffer
+struct dbb {
+  bb buf;
+
+  // Allocator used to pull/release memory for buffer
+  mem::alc alc;
+
+  let dbb() noexcept : buf(bb()), alc(mem::alc()) {}
+
+  let dbb(mem::alc a) noexcept : buf(bb()), alc(a) {}
+
+  let dbb(mem::alc a, usz n) noexcept : buf(bb()), alc(a) { init(n); }
+
+  method void init(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+    buf = bb(alc.alloc(n));
+  }
+
+  method bool is_nil() noexcept { return alc.is_nil(); }
+
+  // Increase buffer capacity by at least n bytes
+  method void grow(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+
+    if (buf.is_nil()) {
+      buf = bb(alc.alloc(n));
+      return;
+    }
+
+    const usz len = buf.len;
+
+    buf = bb(alc.realloc(buf.body(), buf.cap + n));
+    buf.len = len;
+  }
+
+  method void write(mc c) noexcept {
+    if (c.is_nil()) {
+      return;
+    }
+
+    if (buf.rem() >= c.len) {
+      buf.unsafe_write(c);
+      return;
+    }
+
+    // calculate by how much we need to grow buffer capacity
+    var dirty usz n;
+    if (c.len <= buf.cap) {
+      n = buf.cap;
+    } else if (buf.cap != 0) {
+      n = c.len + (buf.cap >> 1);
+    } else {
+      if (c.len < 16) {
+        n = 16;
+      } else if (c.len < 64) {
+        n = 64;
+      } else {
+        n = c.len + (c.len >> 1);
+      }
+    }
+
+    grow(n);
+
+    buf.unsafe_write(c);
+  }
+
+  method void free() noexcept {
+    if (buf.is_nil()) {
+      return;
+    }
+    alc.free(buf.body());
+  }
+};
+
+// Dynamically allocated buffer of elements (of the same type).
+// It is most similar to dynamic arrays from other libraries or
+// languages, but you have to choose memory allocator manually
+template <typename T>
+struct dyn {
+  // WIP
+  method void foo() {
+    var T t;
+
+    t.alloc();
+  }
 };
 
 // C String

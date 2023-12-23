@@ -135,12 +135,12 @@ var global struct termios original_terminal_state;
 var global usz backtrace_buffer[MAX_BACKTRACE_LEVEL];
 var global u8 panic_display_buffer[PANIC_DISPLAY_BUFFER_SIZE];
 
-fn void fatal(mc msg, mc filename, u32 line) noexcept {
+fn void fatal(mc msg, src_loc loc) noexcept {
   var bb buf = bb(panic_display_buffer, PANIC_DISPLAY_BUFFER_SIZE);
 
-  buf.write(filename);
+  buf.write(loc.file);
   buf.write(macro_static_str(":"));
-  buf.fmt_dec(line);
+  buf.fmt_dec(loc.line);
 
   buf.write(macro_static_str("\npanic: "));
   buf.write(msg);
@@ -155,10 +155,8 @@ fn void fatal(mc msg, mc filename, u32 line) noexcept {
   backtrace_symbols_fd(cast(void**, &backtrace_buffer), number_of_entries,
                        stderr_fd);
 
-  exit(1);
+  abort();
 }
-
-#define panic(msg) fatal(msg, macro_src_file, macro_src_line)
 
 fn internal void exit_raw_mode() noexcept {
   i32 rcode = tcsetattr(STDIN_FILENO, TCSAFLUSH, &original_terminal_state);
@@ -381,6 +379,8 @@ internal const Token static_literals_table[] = {
     Token(Token::Kind::BUILTIN, macro_static_str("i32")),
     Token(Token::Kind::BUILTIN, macro_static_str("u64")),
     Token(Token::Kind::BUILTIN, macro_static_str("i64")),
+    Token(Token::Kind::BUILTIN, macro_static_str("u128")),
+    Token(Token::Kind::BUILTIN, macro_static_str("i128")),
     Token(Token::Kind::BUILTIN, macro_static_str("usz")),
     Token(Token::Kind::BUILTIN, macro_static_str("isz")),
 
@@ -413,15 +413,46 @@ internal const Token static_literals_table[] = {
 // by handpicking starting salt for hash function
 struct FlatMap {
   Token::Kind* elems;
+  u64 seed;
 
   method bool add(mc key, Token::Kind value) noexcept {
-    const u64 h = hash::map::compute(21, key);
+    const u64 h = hash::map::compute(seed, key);
     const usz pos = h & FLAT_MAP_HASH_MASK;
 
     const Token::Kind old = elems[pos];
     elems[pos] = value;
 
     return old == Token::Kind::EMPTY;
+  }
+
+  method void clear() noexcept {
+    mc(cast(u8*, elems), chunk_size(Token::Kind, FLAT_MAP_CAP)).clear();
+  }
+
+  // print empty and occupied elements to buffer
+  // in illustrative way
+  method mc visualize(mc c) noexcept {
+    var bb buf = bb(c);
+
+    const usz row_len = 64;
+
+    var Token::Kind* ptr = elems;
+    for (usz i = 0; i < FLAT_MAP_CAP / row_len; i += 1) {
+      for (usz j = 0; j < row_len; j += 1) {
+        const Token::Kind k = ptr[j];
+
+        if (k == Token::Kind::EMPTY) {
+          buf.write('_');
+        } else {
+          buf.write('X');
+        }
+      }
+      ptr += row_len;
+      buf.lf();
+      buf.lf();
+    }
+
+    return buf.head();
   }
 };
 
@@ -877,26 +908,45 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  var Token::Kind a[FLAT_MAP_CAP];
-  for (usz i = 0; i < FLAT_MAP_CAP; i += 1) {
-    a[i] = Token::Kind::EMPTY;
-  }
+  var Token::Kind a[FLAT_MAP_CAP] dirty;
+  var FlatMap m = {.elems = a, .seed = 0};
 
-  var FlatMap m = {.elems = a};
+  for (u64 j = 0; j < 100000; j += 1) {
+    m.seed = j;
+    m.clear();
+    var bool found = true;
 
-  for (usz i = 0; i < sizeof(static_literals_table); i += 1) {
-    var Token tok = static_literals_table[i];
+    for (usz i = 0; i < sizeof(static_literals_table) / sizeof(Token); i += 1) {
+      var Token tok = static_literals_table[i];
 
-    var bool ok = m.add(tok.lit, tok.kind);
+      var bool ok = m.add(tok.lit, tok.kind);
 
-    if (!ok) {
-      stderr_write(tok.lit);
+      if (!ok) {
+        found = false;
+
+        // stderr_write(macro_static_str("  "));
+        // stderr_write(tok.lit);
+
+        // exit(1);
+      }
+    }
+
+    if (found) {
+      var dirty u8 z[10];
+      var bb b = bb(z, sizeof(z));
+      b.fmt_dec(m.seed);
+      stderr_write(b.head());
       stderr_write(macro_static_str("\n"));
-      exit(1);
+
+      var dirty u8 buf[1024];
+      stderr_write_all(m.visualize(mc(buf, sizeof(buf))));
+
+      stderr_write(macro_static_str("success\n"));
+      exit(0);
     }
   }
-  stderr_write(macro_static_str("success\n"));
-  return 0;
+  stderr_write(macro_static_str("failure\n"));
+  return 1;
 
   if (argc < 2) {
     e.init();
