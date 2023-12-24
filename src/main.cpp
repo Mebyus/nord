@@ -207,51 +207,26 @@ struct Color {
   let Color(u8 r, u8 g, u8 b) noexcept : red(r), green(g), blue(b) {}
 };
 
-#define COMMAND_SKETCH_BUFFER_SIZE 32
+internal const usz terminal_sketch_buffer_size = 32;
 
-struct CommandBuffer {
-  u8 sketch_buf[COMMAND_SKETCH_BUFFER_SIZE];
+struct TerminalOutputBuffer {
+  u8 sketch_buf[terminal_sketch_buffer_size];
 
-  bb s;
+  DynBytesBuffer db;
 
-  let CommandBuffer() noexcept {}
+  let TerminalOutputBuffer() noexcept {}
 
-  let CommandBuffer(usz initial_size) noexcept {
-    var u8* bytes = (u8*)malloc(initial_size);
-    if (bytes == nil) {
-      panic(macro_static_str("failed to allocate memory for command buffer"));
-    }
-
-    s = bb(bytes, initial_size);
+  let TerminalOutputBuffer(usz initial_size) noexcept {
+    db = DynBytesBuffer(initial_size);
   }
 
   method void write(mc c) noexcept {
-    if (s.rem() >= c.len) {
-      s.unsafe_write(c);
-      return;
-    }
-
-    // grow buffer capacity
-    var dirty usz new_cap;
-    if (c.len <= s.cap) {
-      new_cap = s.cap << 1;
-    } else {
-      new_cap = s.cap + c.len + (s.cap >> 1);
-    }
-
-    var u8* bytes = (u8*)realloc(s.ptr, new_cap);
-    if (bytes == nil) {
-      panic(macro_static_str("failed to grow memory for command buffer"));
-    }
-    s.cap = new_cap;
-    s.ptr = bytes;
-
-    s.unsafe_write(c);
+    db.write(c);
   }
 
   method void change_cursor_position(u32 x, u32 y) noexcept {
     // prepare command string
-    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+    var bb buf = bb(sketch_buf, terminal_sketch_buffer_size);
 
     buf.unsafe_write(macro_static_str("\x1b["));
     buf.fmt_dec(y + 1);
@@ -264,7 +239,7 @@ struct CommandBuffer {
   }
 
   method void set_text_color(Color color) noexcept {
-    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+    var bb buf = bb(sketch_buf, terminal_sketch_buffer_size);
 
     buf.write(macro_static_str("\x1b[38;2;"));
     buf.fmt_dec(color.red);
@@ -278,7 +253,7 @@ struct CommandBuffer {
   }
 
   method void set_background_color(Color color) noexcept {
-    var bb buf = bb(sketch_buf, COMMAND_SKETCH_BUFFER_SIZE);
+    var bb buf = bb(sketch_buf, terminal_sketch_buffer_size);
 
     buf.write(macro_static_str("\x1b[48;2;"));
     buf.fmt_dec(color.red);
@@ -298,10 +273,10 @@ struct CommandBuffer {
   // Begin new line in output
   method void nl() noexcept { write(macro_static_str("\r\n")); }
 
-  method void reset() noexcept { s.reset(); }
+  method void reset() noexcept { db.reset(); }
 
   method void flush() noexcept {
-    stdout_write_all(s.head());
+    stdout_write_all(db.head());
     reset();
   }
 };
@@ -556,7 +531,7 @@ struct Editor {
     Seq s;
   };
 
-  CommandBuffer cmd_buf;
+  TerminalOutputBuffer cmd_buf;
 
   chunk<TextLine> lines;
 
@@ -621,7 +596,7 @@ struct Editor {
 
     enter_raw_mode();
 
-    cmd_buf = CommandBuffer(COMMAND_BUFFER_INITIAL_SIZE);
+    cmd_buf = TerminalOutputBuffer(COMMAND_BUFFER_INITIAL_SIZE);
 
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);

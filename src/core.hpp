@@ -945,8 +945,16 @@ struct Gen {
 
 var global Gen gpa_global_instance = Gen();
 
-fn Gen* gpa() noexcept {
-  return &gpa_global_instance;
+fn mc alloc(usz n) noexcept {
+  return gpa_global_instance.alloc(n);
+}
+
+fn mc realloc(mc c, usz n) noexcept {
+  return gpa_global_instance.realloc(c, n);
+}
+
+fn void free(mc c) noexcept {
+  return gpa_global_instance.free(c);
 }
 
 struct alc {
@@ -1041,6 +1049,94 @@ struct alc {
 };
 
 }  // namespace mem
+
+fn internal inline usz determine_grow_amount(usz cap, usz len) noexcept {
+  if (len <= cap) {
+    const usz size_four_megabytes = 1 << 22;
+    if (cap < size_four_megabytes) {
+      return cap;
+    }
+
+    return len + (cap >> 10);
+  }
+
+  if (cap != 0) {
+    return len + (cap >> 1);
+  }
+
+  if (len < 16) {
+    return 16;
+  }
+
+  if (len < 64) {
+    return 64;
+  }
+
+  return len + (len >> 1);
+}
+
+// Dynamically allocated bytes buffer. Default global general
+// purpose allocator is used to manage underlying memory
+struct DynBytesBuffer {
+  bb buf;
+
+  let DynBytesBuffer() noexcept : buf(bb()) {}
+
+  let DynBytesBuffer(usz n) noexcept : buf(bb()) { init(n); }
+
+  method void init(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+    buf = bb(mem::alloc(n));
+  }
+
+  // Increase buffer capacity by at least n bytes
+  method void grow(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+
+    if (buf.is_nil()) {
+      buf = bb(mem::alloc(n));
+      return;
+    }
+
+    const usz len = buf.len;
+
+    buf = bb(mem::realloc(buf.body(), buf.cap + n));
+    buf.len = len;
+  }
+
+  method void write(mc c) noexcept {
+    if (c.is_nil()) {
+      return;
+    }
+
+    if (buf.rem() >= c.len) {
+      buf.unsafe_write(c);
+      return;
+    }
+
+    const usz n = determine_grow_amount(buf.cap, buf.len);
+    grow(n);
+
+    buf.unsafe_write(c);
+  }
+
+  method void free() noexcept {
+    if (buf.is_nil()) {
+      return;
+    }
+    mem::free(buf.body());
+  }
+
+  method void reset() noexcept {
+    buf.reset();
+  }
+
+  method mc head() noexcept { return buf.head(); }
+};
 
 // Dynamically allocated bytes buffer
 struct dbb {
