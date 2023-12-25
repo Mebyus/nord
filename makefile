@@ -27,7 +27,7 @@ GENFLAGS = -fwrapv -fno-exceptions
 ifeq (${BUILD_KIND}, debug)
 	BIN_DIR = bin/debug
 	CACHE_DIR = cache/debug
-	CFLAGS = ${GENFLAGS} ${WARNINGS} -Werror -pipe -std=c++${CSTANDARD} -ggdb -Og
+	CFLAGS = ${GENFLAGS} ${WARNINGS} -Werror -pipe -std=c++${CSTANDARD} -ggdb
 else
 	BIN_DIR = bin/release
 	CACHE_DIR = cache/release

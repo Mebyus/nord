@@ -896,6 +896,8 @@ struct buffer {
     ptr[len] = elem;
     len += 1;
   }
+
+  method chunk<T> body() noexcept { return chunk<T>(ptr, cap); }
 };
 
 namespace mem {
@@ -927,7 +929,7 @@ struct Gen {
   }
 
   method mc realloc(mc c, usz n) noexcept {
-    must(n > 0);
+    must(n > 0 && c.len != n);
 
     var u8* ptr = cast(u8*, ::realloc(c.ptr, n));
     if (ptr == nil) {
@@ -936,7 +938,25 @@ struct Gen {
     return mc(ptr, n);
   }
 
+  template <typename T>
+  method chunk<T> realloc(chunk<T> c, usz n) noexcept {
+    must(n > 0 && c.len != n);
+
+    var T* ptr = cast(T*, ::realloc(c.ptr, chunk_size(T, n)));
+    if (ptr == nil) {
+      return chunk<T>();
+    }
+    return chunk<T>(ptr, n);
+  }
+
   method void free(mc c) noexcept {
+    must(!c.is_nil());
+
+    ::free(c.ptr);
+  }
+
+  template <typename T>
+  method void free(chunk<T> c) noexcept {
     must(!c.is_nil());
 
     ::free(c.ptr);
@@ -949,12 +969,27 @@ fn mc alloc(usz n) noexcept {
   return gpa_global_instance.alloc(n);
 }
 
+template <typename T>
+fn chunk<T> alloc(usz n) noexcept {
+  return gpa_global_instance.alloc<T>(n);
+}
+
 fn mc realloc(mc c, usz n) noexcept {
   return gpa_global_instance.realloc(c, n);
 }
 
+template <typename T>
+fn chunk<T> realloc(chunk<T> c, usz n) noexcept {
+  return gpa_global_instance.realloc<T>(c, n);
+}
+
 fn void free(mc c) noexcept {
-  return gpa_global_instance.free(c);
+  gpa_global_instance.free(c);
+}
+
+template <typename T>
+fn void free(chunk<T> c) noexcept {
+  gpa_global_instance.free<T>(c);
 }
 
 struct alc {
@@ -1050,7 +1085,7 @@ struct alc {
 
 }  // namespace mem
 
-fn internal inline usz determine_grow_amount(usz cap, usz len) noexcept {
+fn internal inline usz determine_bytes_grow_amount(usz cap, usz len) noexcept {
   if (len <= cap) {
     const usz size_four_megabytes = 1 << 22;
     if (cap < size_four_megabytes) {
@@ -1118,7 +1153,7 @@ struct DynBytesBuffer {
       return;
     }
 
-    const usz n = determine_grow_amount(buf.cap, buf.len);
+    const usz n = determine_bytes_grow_amount(buf.cap, buf.len);
     grow(n);
 
     buf.unsafe_write(c);
@@ -1131,9 +1166,7 @@ struct DynBytesBuffer {
     mem::free(buf.body());
   }
 
-  method void reset() noexcept {
-    buf.reset();
-  }
+  method void reset() noexcept { buf.reset(); }
 
   method mc head() noexcept { return buf.head(); }
 };
@@ -1216,17 +1249,91 @@ struct dbb {
   }
 };
 
+fn internal inline usz determine_grow_amount(usz cap, usz len) noexcept {
+  if (len <= cap) {
+    const usz size_threshold = 1 << 16;
+    if (cap < size_threshold) {
+      return cap;
+    }
+
+    return len + (cap >> 8);
+  }
+
+  if (cap != 0) {
+    return len + (cap >> 1);
+  }
+
+  if (len < 16) {
+    return 16;
+  }
+
+  if (len < 64) {
+    return 64;
+  }
+
+  return len + (len >> 1);
+}
+
 // Dynamically allocated buffer of elements (of the same type).
 // It is most similar to dynamic arrays from other libraries or
-// languages, but you have to choose memory allocator manually
+// languages. Default global general purpose allocator is used
+// to manage underlying memory
 template <typename T>
-struct dyn {
-  // WIP
-  method void foo() {
-    var T t;
+struct DynBuffer {
+  buffer<T> buf;
 
-    t.alloc();
+  let DynBuffer() noexcept : buf(buffer<T>()) {}
+
+  let DynBuffer(usz n) noexcept : buf(buffer<T>()) { init(n); }
+
+  method void init(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+    buf = buffer<T>(mem::alloc<T>(n));
   }
+
+  // Increase buffer capacity by at least n elements
+  method void grow(usz n) noexcept {
+    if (n == 0) {
+      return;
+    }
+
+    if (buf.is_nil()) {
+      buf = buffer<T>(mem::alloc<T>(n));
+      return;
+    }
+
+    const usz len = buf.len;
+
+    buf = buffer<T>(mem::realloc<T>(buf.body(), buf.cap + n));
+    buf.len = len;
+  }
+
+  method void append(T elem) noexcept {
+    if (buf.rem() >= 1) {
+      buf.unsafe_append(elem);
+      return;
+    }
+
+    const usz n = determine_grow_amount(buf.cap, buf.len);
+    grow(n);
+
+    buf.unsafe_append(elem);
+  }
+
+  method void free() noexcept {
+    if (buf.is_nil()) {
+      return;
+    }
+    mem::free(buf.body());
+  }
+
+  method void reset() noexcept { buf.reset(); }
+
+  method usz len() noexcept { return buf.len; }
+
+  method mc head() noexcept { return buf.head(); }
 };
 
 // C String

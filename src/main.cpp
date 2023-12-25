@@ -97,28 +97,27 @@ fn FileReadResult read_file(cstr filename) noexcept {
     return FileReadResult(FileReadResult::Code::Error);
   }
 
-  var usz size = s.st_size;
+  const usz size = s.st_size;
   if (size == 0) {
     // File is empty, nothing to read
     return FileReadResult(mc());
   }
 
-  var i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
+  const i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
   if (fd < 0) {
     return FileReadResult(FileReadResult::Code::Error);
   }
 
-  var u8* bytes = (u8*)malloc(size);
-  if (bytes == nil) {
+  var mc data = mem::alloc(size);
+  if (data.is_nil()) {
     close(fd);
     return FileReadResult(FileReadResult::Code::Error);
   }
 
-  var mc data = mc(bytes, size);
-  var usz n = fd_read_all(fd, data);
+  const usz n = fd_read_all(fd, data);
   close(fd);
   if (n == 0) {
-    free(data.ptr);
+    mem::free(data);
     return FileReadResult(FileReadResult::Code::Error);
   }
 
@@ -220,9 +219,7 @@ struct TerminalOutputBuffer {
     db = DynBytesBuffer(initial_size);
   }
 
-  method void write(mc c) noexcept {
-    db.write(c);
-  }
+  method void write(mc c) noexcept { db.write(c); }
 
   method void change_cursor_position(u32 x, u32 y) noexcept {
     // prepare command string
@@ -385,23 +382,109 @@ internal const Token static_literals_table[] = {
 #define FLAT_MAP_HASH_MASK 0xFF
 
 // Hash table of static size with no collisions. This is achived
-// by handpicking starting salt for hash function
+// by handpicking starting seed for hash function
 struct FlatMap {
-  Token::Kind* elems;
+  // Item stored in map. Returned when get method is used
+  struct Item {
+    // value that was placed in map by add method
+    Token::Kind value;
+
+    // true if item is actually stored in map, i.e.
+    // it is map item occupation flag
+    bool ok;
+
+    // constructs empty item
+    let Item() noexcept : value(Token::Kind::EMPTY), ok(false) {}
+
+    let Item(Token::Kind v) noexcept : value(v), ok(true) {}
+  };
+
+  // Internal structure used for storing items in map
+  struct Entry {
+    // key hash of stored item
+    u64 hash;
+
+    // key length of stored item
+    usz len;
+
+    Item item;
+  };
+
   u64 seed;
 
+  // continuous array of stored entries
+  Entry* ptr;
+
+  // number of elements stored in map
+  usz len;
+
+  // minimal length of key stored in map
+  usz min_key_len;
+
+  // maximum length of key stored in map
+  usz max_key_len;
+
+  let FlatMap(u64 s, Entry* p) noexcept
+      : seed(s), ptr(p), len(0), min_key_len(0), max_key_len(0) {
+    clear();
+  }
+
+  method u64 hash(mc key) noexcept { return hash::map::compute(seed, key); }
+
+  method usz determine_pos(u64 h) noexcept { return h & FLAT_MAP_HASH_MASK; }
+
+  // Returns true if item was successfully added to map.
+  // Returns false if corresponding cell was already
+  // occupied in map
   method bool add(mc key, Token::Kind value) noexcept {
-    const u64 h = hash::map::compute(seed, key);
-    const usz pos = h & FLAT_MAP_HASH_MASK;
+    const usz h = hash(key);
+    const usz pos = determine_pos(h);
 
-    const Token::Kind old = elems[pos];
-    elems[pos] = value;
+    const Entry entry = ptr[pos];
 
-    return old == Token::Kind::EMPTY;
+    if (entry.item.ok) {
+      return false;
+    }
+
+    ptr[pos] = {
+        .hash = h,
+        .len = key.len,
+        .item = Item(value),
+    };
+
+    if (key.len > max_key_len) {
+      max_key_len = key.len;
+    }
+
+    if (len == 0) {
+      min_key_len = key.len;
+    } else if (key.len < min_key_len) {
+      min_key_len = key.len;
+    }
+
+    len += 1;
+
+    return true;
+  }
+
+  method Item get(mc key) noexcept {
+    if ((key.len < min_key_len) || (key.len > max_key_len)) {
+      return Item();
+    }
+
+    const usz h = hash(key);
+    const usz pos = determine_pos(h);
+    const Entry entry = ptr[pos];
+
+    if (!entry.item.ok || entry.len != key.len || entry.hash != h) {
+      return Item();
+    }
+
+    return entry.item;
   }
 
   method void clear() noexcept {
-    mc(cast(u8*, elems), chunk_size(Token::Kind, FLAT_MAP_CAP)).clear();
+    mc(cast(u8*, ptr), chunk_size(Entry, FLAT_MAP_CAP)).clear();
   }
 
   // print empty and occupied elements to buffer
@@ -411,18 +494,19 @@ struct FlatMap {
 
     const usz row_len = 64;
 
-    var Token::Kind* ptr = elems;
+    var Entry* p = ptr;
     for (usz i = 0; i < FLAT_MAP_CAP / row_len; i += 1) {
       for (usz j = 0; j < row_len; j += 1) {
-        const Token::Kind k = ptr[j];
+        const Entry entry = p[j];
 
-        if (k == Token::Kind::EMPTY) {
-          buf.write('_');
-        } else {
+        if (entry.item.ok) {
           buf.write('X');
+        } else {
+          buf.write('_');
         }
       }
-      ptr += row_len;
+
+      p += row_len;
       buf.lf();
       buf.lf();
     }
@@ -437,9 +521,12 @@ struct TextLine {
   mc data;
 };
 
-var global TextLine lines_buffer[1 << 10];
+fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
+  const usz avg_bytes_per_line = 25;  // empirical constant
 
-fn internal chunk<TextLine> split_lines(mc text) noexcept {
+  var DynBuffer<TextLine> buf =
+      DynBuffer<TextLine>(text.len / avg_bytes_per_line);
+
   // start index of current line in text chunk
   var usz start = 0;
 
@@ -459,9 +546,10 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
     }
 
     if (c == '\n') {
-      var mc line = text.slice(start, end);
+      const mc line = text.slice(start, end);
+      const TextLine text_line = {.data = line};
 
-      lines_buffer[j].data = line;
+      buf.append(text_line);
 
       j += 1;
 
@@ -474,18 +562,17 @@ fn internal chunk<TextLine> split_lines(mc text) noexcept {
 
   if (start == end) {
     // no need to save last line
-    return chunk<TextLine>(lines_buffer, j);
+    return buf;
   }
 
   // save last line
-  var mc line = text.slice(start, end);
-
-  // lines_buffer[j].num = cast(u32, j + 1);
-  lines_buffer[j].data = line;
+  const mc line = text.slice(start, end);
+  const TextLine text_line = {.data = line};
+  buf.append(text_line);
 
   j += 1;
 
-  return chunk<TextLine>(lines_buffer, j);
+  return buf;
 }
 
 fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
@@ -505,11 +592,11 @@ fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
 struct Editor {
   // type of input sequence
   enum struct Seq : u8 {
+    // malformed sequence
+    UNKNOWN = 0,
+
     // key is a regular printable character
     REGULAR,
-
-    // malformed sequence
-    UNKNOWN,
 
     ESC,
 
@@ -531,9 +618,9 @@ struct Editor {
     Seq s;
   };
 
-  TerminalOutputBuffer cmd_buf;
+  TerminalOutputBuffer term_buf;
 
-  chunk<TextLine> lines;
+  DynBuffer<TextLine> lines;
 
   // cursor position, originating from top-left corner
   u32 cx;
@@ -557,11 +644,11 @@ struct Editor {
   method void init() noexcept {
     init_terminal();
 
-    cmd_buf.hide_cursor();
+    term_buf.hide_cursor();
     draw_text();
-    cmd_buf.show_cursor();
+    term_buf.show_cursor();
     update_cursor_position();
-    cmd_buf.flush();
+    term_buf.flush();
   }
 
   method void init(cstr filename) noexcept {
@@ -577,12 +664,12 @@ struct Editor {
 
     init_terminal();
 
-    cmd_buf.hide_cursor();
+    term_buf.hide_cursor();
     clear_window();
     draw_text();
-    cmd_buf.show_cursor();
+    term_buf.show_cursor();
     update_cursor_position();
-    cmd_buf.flush();
+    term_buf.flush();
   }
 
   method void init_terminal() noexcept {
@@ -596,7 +683,7 @@ struct Editor {
 
     enter_raw_mode();
 
-    cmd_buf = TerminalOutputBuffer(COMMAND_BUFFER_INITIAL_SIZE);
+    term_buf = TerminalOutputBuffer(COMMAND_BUFFER_INITIAL_SIZE);
 
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
@@ -609,7 +696,7 @@ struct Editor {
     var dirty u8 gutter_buf[16];
     var bb buf = bb(gutter_buf, 16);
 
-    var u32 max_line_number = min(vy + rows_num, cast(u32, lines.len));
+    var u32 max_line_number = min(vy + rows_num, cast(u32, lines.len()));
     var usz line_number_width = buf.fmt_dec(max_line_number);
     buf.reset();
 
@@ -622,21 +709,23 @@ struct Editor {
 
     // line index which is drawn at current y coordinate
     usz j = vy;
-    while (y < rows_num - 1 && j < lines.len) {
+    while (y < rows_num - 1 && j < lines.len()) {
       mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
-      cmd_buf.write(line_gutter);
-      cmd_buf.write(lines.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
-      cmd_buf.nl();
+      term_buf.write(line_gutter);
+      term_buf.write(
+          lines.buf.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
+      term_buf.nl();
 
       y += 1;
       j += 1;
     }
 
     // draw last line without newline at the end
-    if (y == rows_num - 1 && j < lines.len) {
+    if (y == rows_num - 1 && j < lines.len()) {
       mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
-      cmd_buf.write(line_gutter);
-      cmd_buf.write(lines.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
+      term_buf.write(line_gutter);
+      term_buf.write(
+          lines.buf.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
     }
   }
 
@@ -649,7 +738,7 @@ struct Editor {
   }
 
   method void move_viewport_down() noexcept {
-    if (vy >= lines.len - 1) {
+    if (vy >= lines.len() - 1) {
       return;
     }
     vy += 1;
@@ -704,12 +793,12 @@ struct Editor {
   }
 
   method void jump_viewport_down() noexcept {
-    if (vy >= lines.len - 1) {
+    if (vy >= lines.len() - 1) {
       return;
     }
 
-    if (vy + viewport_page_stride > lines.len - 1) {
-      vy = cast(u32, lines.len) - 1;
+    if (vy + viewport_page_stride > lines.len() - 1) {
+      vy = cast(u32, lines.len()) - 1;
     } else {
       vy += viewport_page_stride;
     }
@@ -717,7 +806,7 @@ struct Editor {
   }
 
   method void update_cursor_position() noexcept {
-    cmd_buf.change_cursor_position(cx, cy);
+    term_buf.change_cursor_position(cx, cy);
   }
 
   method void update_window() noexcept {
@@ -728,17 +817,17 @@ struct Editor {
     }
     update_cursor_position();
 
-    cmd_buf.flush();
+    term_buf.flush();
   }
 
   method void clear_window() noexcept {
-    cmd_buf.reset();
+    term_buf.reset();
 
-    cmd_buf.write(macro_static_str("\x1b[2J"));  // clear terminal screen
-    cmd_buf.write(
+    term_buf.write(macro_static_str("\x1b[2J"));  // clear terminal screen
+    term_buf.write(
         macro_static_str("\x1b[H"));  // position cursor at the top-left corner
 
-    cmd_buf.flush();
+    term_buf.flush();
   }
 };
 
@@ -883,12 +972,10 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  var Token::Kind a[FLAT_MAP_CAP] dirty;
-  var FlatMap m = {.elems = a, .seed = 0};
+  var FlatMap::Entry a[FLAT_MAP_CAP] dirty;
 
   for (u64 j = 0; j < 100000; j += 1) {
-    m.seed = j;
-    m.clear();
+    var FlatMap m = FlatMap(j, a);
     var bool found = true;
 
     for (usz i = 0; i < sizeof(static_literals_table) / sizeof(Token); i += 1) {
@@ -898,11 +985,7 @@ fn i32 main(i32 argc, u8** argv) noexcept {
 
       if (!ok) {
         found = false;
-
-        // stderr_write(macro_static_str("  "));
-        // stderr_write(tok.lit);
-
-        // exit(1);
+        break;
       }
     }
 
@@ -917,6 +1000,14 @@ fn i32 main(i32 argc, u8** argv) noexcept {
       stderr_write_all(m.visualize(mc(buf, sizeof(buf))));
 
       stderr_write(macro_static_str("success\n"));
+
+      const FlatMap::Item item = m.get(macro_static_str("fn"));
+      b.reset();
+      b.fmt_dec(cast(u8, item.value));
+      b.lf();
+
+      stderr_write(b.head());
+
       exit(0);
     }
   }
