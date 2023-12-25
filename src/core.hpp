@@ -70,6 +70,9 @@ typedef usz uptr;
 
 typedef void* anyptr;
 
+// Rune represents a unicode code point
+typedef u32 rune;
+
 template <typename T>
 fn inline constexpr T min(T a, T b) noexcept {
   if (a < b) {
@@ -908,7 +911,7 @@ struct Gen {
   let Gen() noexcept {}
 
   method mc alloc(usz n) noexcept {
-    must(n > 0);
+    must(n != 0);
 
     var u8* ptr = cast(u8*, malloc(n));
     if (ptr == nil) {
@@ -919,7 +922,8 @@ struct Gen {
 
   template <typename T>
   method chunk<T> alloc(usz n) noexcept {
-    must(n > 0);
+    static_assert(sizeof(T) != 0);
+    must(n != 0);
 
     var T* ptr = cast(T*, malloc(chunk_size(T, n)));
     if (ptr == nil) {
@@ -928,8 +932,30 @@ struct Gen {
     return chunk<T>(ptr, n);
   }
 
+  method mc calloc(usz n) noexcept {
+    must(n != 0);
+
+    var u8* ptr = cast(u8*, ::calloc(n, 1));
+    if (ptr == nil) {
+      return mc();
+    }
+    return mc(ptr, n);
+  }
+
+  template <typename T>
+  method chunk<T> calloc(usz n) noexcept {
+    static_assert(sizeof(T) != 0);
+    must(n != 0);
+
+    var T* ptr = cast(T*, ::calloc(n, sizeof(T)));
+    if (ptr == nil) {
+      return chunk<T>();
+    }
+    return chunk<T>(ptr, n);
+  }
+
   method mc realloc(mc c, usz n) noexcept {
-    must(n > 0 && c.len != n);
+    must(c.ptr != nil && c.len != 0 && n != 0 && c.len != n);
 
     var u8* ptr = cast(u8*, ::realloc(c.ptr, n));
     if (ptr == nil) {
@@ -940,7 +966,8 @@ struct Gen {
 
   template <typename T>
   method chunk<T> realloc(chunk<T> c, usz n) noexcept {
-    must(n > 0 && c.len != n);
+    static_assert(sizeof(T) != 0);
+    must(c.ptr != nil && c.len != 0 && n != 0 && c.len != n);
 
     var T* ptr = cast(T*, ::realloc(c.ptr, chunk_size(T, n)));
     if (ptr == nil) {
@@ -950,14 +977,14 @@ struct Gen {
   }
 
   method void free(mc c) noexcept {
-    must(!c.is_nil());
+    must(c.ptr != nil && c.len != 0);
 
     ::free(c.ptr);
   }
 
   template <typename T>
   method void free(chunk<T> c) noexcept {
-    must(!c.is_nil());
+    must(c.ptr != nil && c.len != 0);
 
     ::free(c.ptr);
   }
@@ -972,6 +999,15 @@ fn mc alloc(usz n) noexcept {
 template <typename T>
 fn chunk<T> alloc(usz n) noexcept {
   return gpa_global_instance.alloc<T>(n);
+}
+
+fn mc calloc(usz n) noexcept {
+  return gpa_global_instance.calloc(n);
+}
+
+template <typename T>
+fn chunk<T> calloc(usz n) noexcept {
+  return gpa_global_instance.calloc<T>(n);
 }
 
 fn mc realloc(mc c, usz n) noexcept {
@@ -1630,5 +1666,47 @@ fn mc print_types_info(mc c) noexcept {
 }
 
 }  // namespace debug
+
+namespace text {
+
+fn inline bool is_latin_letter(rune r) noexcept {
+  r = r & 0xFFFFFFDF;
+  return 'A' <= r && r <= 'Z';
+}
+
+fn inline bool is_latin_letter_or_underscore(rune r) noexcept {
+  return is_latin_letter(r) || r == '_';
+}
+
+fn inline bool is_decimal_digit(rune r) noexcept {
+  return '0' <= r && r <= '9';
+}
+
+fn inline bool is_alphanum(rune r) noexcept {
+  return is_latin_letter_or_underscore(r) || is_decimal_digit(r);
+}
+
+fn inline bool is_decimal_digit_or_period(rune r) noexcept {
+  return is_decimal_digit(r) || r == '.';
+}
+
+fn inline bool is_simple_whitespace(rune r) noexcept {
+  return r == ' ' || r == '\n' || r == '\t' || r == '\r';
+}
+
+fn inline bool is_hexadecimal_digit(rune r) noexcept {
+  const rune h = r & 0xFFFFFFDF;
+  return is_decimal_digit(r) || ('A' <= h && h <= 'F');
+}
+
+fn inline bool is_octal_digit(rune r) noexcept {
+  return '0' <= r && r <= '7';
+}
+
+fn inline bool is_binary_digit(rune r) noexcept {
+  return r == '0' || r == '1';
+}
+
+}  // namespace text
 
 #endif  // GUARD_CORE_HPP

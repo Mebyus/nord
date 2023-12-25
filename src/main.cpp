@@ -283,6 +283,7 @@ struct TerminalOutputBuffer {
 struct Token {
   enum struct Kind : u8 {
     EMPTY = 0,
+    EOL,
     DIRECTIVE,
     KEYWORD_GROUP_1,
     KEYWORD_GROUP_2,
@@ -303,6 +304,10 @@ struct Token {
   // true for Tokens for which visual representation is not
   // the same as their byte sequence in literal
   bool is_indirect;
+
+  let Token() noexcept : lit(mc()), kind(Kind::EMPTY), is_indirect(false) {}
+
+  let Token(Token::Kind k) noexcept : lit(mc()), kind(k), is_indirect(false) {}
 
   let Token(Token::Kind k, str l) noexcept
       : lit(l), kind(k), is_indirect(false) {}
@@ -380,6 +385,7 @@ internal const Token static_literals_table[] = {
 
 #define FLAT_MAP_CAP 256
 #define FLAT_MAP_HASH_MASK 0xFF
+#define FLAT_MAP_SEED 2664
 
 // Hash table of static size with no collisions. This is achived
 // by handpicking starting seed for hash function
@@ -520,6 +526,24 @@ struct TextLine {
   // trailing newline characters
   mc data;
 };
+
+#include "lexer.cpp"
+
+fn internal DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
+  if (line.is_nil()) {
+    return DynBuffer<Token>();
+  }
+
+  var DynBuffer<Token> buf = DynBuffer<Token>();
+  var nord::Lexer lexer = nord::Lexer(map, line);
+
+  var Token tok = lexer.lex();
+  while (tok.kind != Token::Kind::EOL) {
+    buf.append(tok);
+  }
+
+  return buf;
+}
 
 fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
   const usz avg_bytes_per_line = 25;  // empirical constant
