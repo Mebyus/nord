@@ -294,6 +294,7 @@ struct Token {
     COMMENT,
     NUMBER,
     OPERATOR,
+    PUNCTUATOR,
     SPACE,
     TAB,
   };
