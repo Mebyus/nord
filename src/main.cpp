@@ -404,8 +404,6 @@ internal const Token static_literals_table[] = {
     Token(Token::Kind::BUILTIN, macro_static_str("nop_use")),
 };
 
-#define FLAT_MAP_CAP 256
-#define FLAT_MAP_HASH_MASK 0xFF
 #define FLAT_MAP_SEED 2664
 
 // Hash table of static size with no collisions. This is achived
@@ -437,10 +435,12 @@ struct FlatMap {
     Item item;
   };
 
-  u64 seed;
+  // continuous chunk of stored entries
+  chunk<Entry> entries;
 
-  // continuous array of stored entries
-  Entry* ptr;
+  u64 mask;
+
+  u64 seed;
 
   // number of elements stored in map
   usz len;
@@ -451,29 +451,54 @@ struct FlatMap {
   // maximum length of key stored in map
   usz max_key_len;
 
-  let FlatMap(u64 s, Entry* p) noexcept
-      : seed(s), ptr(p), len(0), min_key_len(0), max_key_len(0) {
-    clear();
+  let FlatMap() noexcept
+      : entries(chunk<Entry>()),
+        mask(0),
+        seed(0),
+        len(0),
+        min_key_len(0),
+        max_key_len(0) {}
+
+  let FlatMap(usz cap, u64 m, u64 s) noexcept
+      : entries(chunk<Entry>(nil, cap)),
+        mask(m),
+        seed(s),
+        len(0),
+        min_key_len(0),
+        max_key_len(0) {
+    //
+    init();
   }
+
+  method void init() noexcept {
+    const usz cap = entries.len;
+    entries = mem::calloc<Entry>(cap);
+  }
+
+  method bool is_nil() noexcept { return entries.is_nil(); }
+
+  method bool is_empty() noexcept { return len == 0; }
+
+  method void free() noexcept { mem::free(entries); }
 
   method u64 hash(mc key) noexcept { return hash::map::compute(seed, key); }
 
-  method usz determine_pos(u64 h) noexcept { return h & FLAT_MAP_HASH_MASK; }
+  method usz determine_pos(u64 h) noexcept { return h & mask; }
 
   // Returns true if item was successfully added to map.
   // Returns false if corresponding cell was already
   // occupied in map
-  method bool add(mc key, Token::Kind value) noexcept {
+  method bool add(str key, Token::Kind value) noexcept {
     const usz h = hash(key);
     const usz pos = determine_pos(h);
 
-    const Entry entry = ptr[pos];
+    const Entry entry = entries.ptr[pos];
 
     if (entry.item.ok) {
       return false;
     }
 
-    ptr[pos] = {
+    entries.ptr[pos] = {
         .hash = h,
         .len = key.len,
         .item = Item(value),
@@ -483,7 +508,7 @@ struct FlatMap {
       max_key_len = key.len;
     }
 
-    if (len == 0) {
+    if (is_empty()) {
       min_key_len = key.len;
     } else if (key.len < min_key_len) {
       min_key_len = key.len;
@@ -494,14 +519,14 @@ struct FlatMap {
     return true;
   }
 
-  method Item get(mc key) noexcept {
+  method Item get(str key) noexcept {
     if ((key.len < min_key_len) || (key.len > max_key_len)) {
       return Item();
     }
 
     const usz h = hash(key);
     const usz pos = determine_pos(h);
-    const Entry entry = ptr[pos];
+    const Entry entry = entries.ptr[pos];
 
     if (!entry.item.ok || entry.len != key.len || entry.hash != h) {
       return Item();
@@ -511,7 +536,11 @@ struct FlatMap {
   }
 
   method void clear() noexcept {
-    mc(cast(u8*, ptr), chunk_size(Entry, FLAT_MAP_CAP)).clear();
+    entries.clear();
+
+    len = 0;
+    min_key_len = 0;
+    max_key_len = 0;
   }
 
   // print empty and occupied elements to buffer
@@ -521,8 +550,8 @@ struct FlatMap {
 
     const usz row_len = 64;
 
-    var Entry* p = ptr;
-    for (usz i = 0; i < FLAT_MAP_CAP / row_len; i += 1) {
+    var Entry* p = entries.ptr;
+    for (usz i = 0; i < entries.len / row_len; i += 1) {
       for (usz j = 0; j < row_len; j += 1) {
         const Entry entry = p[j];
 
@@ -1016,59 +1045,64 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
   e.update_window();
 }
 
+// Adds elements to map one by one until all elements are
+// added or map is unable to hold next element
+//
+// Returns true if all elements were successfully added
+// to map. When true is returned function guarantees that
+// number of supplied literals equals resulting map.len
+//
+// Returns false as soon as at least one element was not
+// successfully added. In this case number of elements
+// actually stored inside a map is unpredictable
+fn bool populate_flat_map(FlatMap& map, chunk<Token> literals) noexcept {
+  for (usz i = 0; i < literals.len; i += 1) {
+    const Token tok = literals.ptr[i];
+    const bool ok = map.add(tok.lit, tok.kind);
+
+    if (!ok) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+// Allocates a map of specified (cap) size on the heap and
 // picks a special seed for map hashing function which allows
 // to store all strings from literals chunk in map without
 // collisions
-// fn u64 find_flat_seed(usz cap, u64 mask, chunk<Token> literals) noexcept {}
+//
+// Argument cap must be a power of 2. Argument mask must correspond
+// to that power with respective number of 1's in lower bits.
+// Number of supplied literals must be less than specified capacity.
+// It is recommended to pick capacity approximately five times
+// greater than number of literals
+fn FlatMap fit_into_flat_map(usz cap,
+                             u64 mask,
+                             chunk<Token> literals) noexcept {
+  //
+  var FlatMap map = FlatMap(cap, mask, 0);
+
+  for (u64 j = 0; j < 100000; j += 1) {
+    const bool ok = populate_flat_map(map, literals);
+
+    if (ok) {
+      return map;
+    }
+
+    map.clear();
+  }
+
+  map.free();
+  return FlatMap();
+}
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  // var FlatMap::Entry a[FLAT_MAP_CAP] dirty;
-
-  // for (u64 j = 0; j < 100000; j += 1) {
-  //   var FlatMap m = FlatMap(j, a);
-  //   var bool found = true;
-
-  //   for (usz i = 0; i < sizeof(static_literals_table) / sizeof(Token); i +=
-  //   1) {
-  //     var Token tok = static_literals_table[i];
-
-  //     var bool ok = m.add(tok.lit, tok.kind);
-
-  //     if (!ok) {
-  //       found = false;
-  //       break;
-  //     }
-  //   }
-
-  //   if (found) {
-  //     var dirty u8 z[10];
-  //     var bb b = bb(z, sizeof(z));
-  //     b.fmt_dec(m.seed);
-  //     stderr_write(b.head());
-  //     stderr_write(macro_static_str("\n"));
-
-  //     var dirty u8 buf[1024];
-  //     stderr_write_all(m.visualize(mc(buf, sizeof(buf))));
-
-  //     stderr_write(macro_static_str("success\n"));
-
-  //     const FlatMap::Item item = m.get(macro_static_str("fn"));
-  //     b.reset();
-  //     b.fmt_dec(cast(u8, item.value));
-  //     b.lf();
-
-  //     stderr_write(b.head());
-
-  //     exit(0);
-  //   }
-  // }
-  // stderr_write(macro_static_str("failure\n"));
-  // return 1;
-
-  var str text =  macro_static_str("\"hello\"  \t world \n 12.3");
+  var str text = macro_static_str("\"hello\"  \t world \n 12.3");
   // var str text = macro_static_str("");
   var nord::Lexer lx = nord::Lexer(nil, text);
-  nord::dump_tokens(1, &lx);
+  nord::dump_tokens(1, lx);
   return 0;
 
   if (argc < 2) {

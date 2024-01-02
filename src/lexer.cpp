@@ -317,7 +317,7 @@ method usz Token::fmt(mc c) noexcept {
 
 namespace nord {
 
-fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer* lx) noexcept {
+fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer& lx) noexcept {
   var u8 write_buf[1 << 13];
   var fs::BufFileWriter w =
       fs::BufFileWriter(fd, mc(write_buf, sizeof(write_buf)));
@@ -326,7 +326,7 @@ fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer* lx) noexcept {
   var mc buf = mc(b, sizeof(b));
   var Token tok dirty;
   do {
-    tok = lx->lex();
+    tok = lx.lex();
 
     // keep 1 byte in order to guarantee enough space for
     // line feed character at the end
