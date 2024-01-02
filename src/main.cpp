@@ -12,6 +12,8 @@
 
 #include "core.hpp"
 
+#include "core_linux.cpp"
+
 fn void copy(u8* src, u8* dst, usz n) noexcept {
   if (n <= 16) {
     for (usz i = 0; i < n; i += 1) {
@@ -34,8 +36,8 @@ method void mc::clear() noexcept {
   memset(ptr, 0, len);
 }
 
-fn internal void fd_write(i32 fd, mc c) noexcept {
-  var isz n = write(fd, c.ptr, c.len);
+fn void fd_write(usz fd, mc c) noexcept {
+  var isz n = write(cast(i32, fd), c.ptr, c.len);
   if (n < 0) {
     // TODO: add error handling
     return;
@@ -297,21 +299,39 @@ struct Token {
     PUNCTUATOR,
     SPACE,
     TAB,
+    NEW_LINE,
+    NO_PRINT,
   };
 
   str lit;
+
+  u16 val;
+
   Token::Kind kind;
 
   // true for Tokens for which visual representation is not
   // the same as their byte sequence in literal
   bool is_indirect;
 
-  let Token() noexcept : lit(mc()), kind(Kind::EMPTY), is_indirect(false) {}
+  let Token() noexcept
+      : lit(mc()), val(0), kind(Kind::EMPTY), is_indirect(false) {}
 
-  let Token(Token::Kind k) noexcept : lit(mc()), kind(k), is_indirect(false) {}
+  let Token(Token::Kind k) noexcept
+      : lit(mc()), val(0), kind(k), is_indirect(false) {}
 
   let Token(Token::Kind k, str l) noexcept
-      : lit(l), kind(k), is_indirect(false) {}
+      : lit(l), val(0), kind(k), is_indirect(false) {}
+
+  let Token(Token::Kind k, u16 v) noexcept
+      : lit(mc()), val(v), kind(k), is_indirect(false) {}
+
+  // Output token into supplied memory chunk in
+  // human readable format
+  method usz fmt(mc c) noexcept;
+
+  method bool has_no_lit() noexcept {
+    return kind == Kind::EMPTY || kind == Kind::EOL || kind == Kind::NEW_LINE;
+  }
 };
 
 internal const Token static_literals_table[] = {
@@ -530,7 +550,7 @@ struct TextLine {
 
 #include "lexer.cpp"
 
-fn internal DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
+fn DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
   if (line.is_nil()) {
     return DynBuffer<Token>();
   }
@@ -996,58 +1016,70 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
   e.update_window();
 }
 
+// picks a special seed for map hashing function which allows
+// to store all strings from literals chunk in map without
+// collisions
+// fn u64 find_flat_seed(usz cap, u64 mask, chunk<Token> literals) noexcept {}
+
 fn i32 main(i32 argc, u8** argv) noexcept {
-  var FlatMap::Entry a[FLAT_MAP_CAP] dirty;
+  // var FlatMap::Entry a[FLAT_MAP_CAP] dirty;
 
-  for (u64 j = 0; j < 100000; j += 1) {
-    var FlatMap m = FlatMap(j, a);
-    var bool found = true;
+  // for (u64 j = 0; j < 100000; j += 1) {
+  //   var FlatMap m = FlatMap(j, a);
+  //   var bool found = true;
 
-    for (usz i = 0; i < sizeof(static_literals_table) / sizeof(Token); i += 1) {
-      var Token tok = static_literals_table[i];
+  //   for (usz i = 0; i < sizeof(static_literals_table) / sizeof(Token); i +=
+  //   1) {
+  //     var Token tok = static_literals_table[i];
 
-      var bool ok = m.add(tok.lit, tok.kind);
+  //     var bool ok = m.add(tok.lit, tok.kind);
 
-      if (!ok) {
-        found = false;
-        break;
-      }
-    }
+  //     if (!ok) {
+  //       found = false;
+  //       break;
+  //     }
+  //   }
 
-    if (found) {
-      var dirty u8 z[10];
-      var bb b = bb(z, sizeof(z));
-      b.fmt_dec(m.seed);
-      stderr_write(b.head());
-      stderr_write(macro_static_str("\n"));
+  //   if (found) {
+  //     var dirty u8 z[10];
+  //     var bb b = bb(z, sizeof(z));
+  //     b.fmt_dec(m.seed);
+  //     stderr_write(b.head());
+  //     stderr_write(macro_static_str("\n"));
 
-      var dirty u8 buf[1024];
-      stderr_write_all(m.visualize(mc(buf, sizeof(buf))));
+  //     var dirty u8 buf[1024];
+  //     stderr_write_all(m.visualize(mc(buf, sizeof(buf))));
 
-      stderr_write(macro_static_str("success\n"));
+  //     stderr_write(macro_static_str("success\n"));
 
-      const FlatMap::Item item = m.get(macro_static_str("fn"));
-      b.reset();
-      b.fmt_dec(cast(u8, item.value));
-      b.lf();
+  //     const FlatMap::Item item = m.get(macro_static_str("fn"));
+  //     b.reset();
+  //     b.fmt_dec(cast(u8, item.value));
+  //     b.lf();
 
-      stderr_write(b.head());
+  //     stderr_write(b.head());
 
-      exit(0);
-    }
-  }
-  stderr_write(macro_static_str("failure\n"));
-  return 1;
+  //     exit(0);
+  //   }
+  // }
+  // stderr_write(macro_static_str("failure\n"));
+  // return 1;
+
+  var str text =  macro_static_str("\"hello\"  \t world \n 12.3");
+  // var str text = macro_static_str("");
+  var nord::Lexer lx = nord::Lexer(nil, text);
+  nord::dump_tokens(1, &lx);
+  return 0;
 
   if (argc < 2) {
     e.init();
   } else {
-    cstr filename = cstr(argv[1]);
+    var cstr filename = cstr(argv[1]);
     e.init(filename);
   }
 
   while (true) {
-    Editor::Key k = read_key_input();
+    const Editor::Key k = read_key_input();
     handle_key_input(k);
   }
 

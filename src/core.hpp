@@ -157,6 +157,13 @@ struct mc {
 
   method mc slice_to(usz end) noexcept { return slice(0, end); }
 
+  // Slice a portion of memory chunk starting from the start of
+  // original slice
+  //
+  // In contrast with slice_to method argument specifies how many
+  // bytes should be cut from the end of original slice
+  method mc slice_down(usz size) noexcept { return slice_to(len - size); }
+
   // Return a slice from original chunk that contains at most
   // <size> bytes
   method mc crop(usz size) noexcept { return slice_to(min(len, size)); }
@@ -274,6 +281,15 @@ struct mc {
   // Returns number of bytes written. If there is not enough space
   // in chunk zero will be returned, but chunk will not be untouched
   method usz fmt_bin_delim(u32 x) noexcept;
+
+  // Write specified byte repeated n times to memory chunk
+  method usz write_repeat(usz n, u8 x) noexcept {
+    n = min(n, len);
+    for (usz i = 0; i < n; i += 1) {
+      ptr[i] = x;
+    }
+    return n;
+  }
 };
 
 typedef mc str;
@@ -677,6 +693,14 @@ struct bb {
 
   method usz write(mc c) noexcept { return write(c.ptr, c.len); }
 
+  // Write specified byte repeated n times to memory chunk
+  method usz write_repeat(usz n, u8 x) noexcept {
+    var mc t = tail();
+    const usz k = t.write_repeat(n, x);
+    len += k;
+    return k;
+  }
+
   method usz unsafe_write(mc c) noexcept {
     copy(c.ptr, tip(), c.len);
     len += c.len;
@@ -716,6 +740,8 @@ struct bb {
   method usz fmt_dec(unsigned long int x) noexcept {
     return fmt_dec(cast(u64, x));
   }
+
+  method usz fmt_dec(u16 x) noexcept { return fmt_dec(cast(u64, x)); }
 
   method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
 
@@ -1440,6 +1466,90 @@ struct FileReadResult {
   method bool is_err() noexcept { return code != Code::Ok; }
 };
 
+namespace fs {
+
+struct WriteResult {
+  enum struct Code : u32 {
+    Ok,
+
+    // Generic error, no specifics known
+    Error,
+  };
+
+  // Number of bytes written
+  usz n;
+
+  Code code;
+
+  let WriteResult() noexcept : n(0), code(Code::Ok) {}
+  let WriteResult(usz k) noexcept : n(k), code(Code::Ok) {}
+  let WriteResult(Code c) noexcept : n(0), code(c) {}
+  let WriteResult(Code c, usz k) noexcept : n(k), code(c) {}
+
+  method bool is_ok() noexcept { return code == Code::Ok; }
+  method bool is_err() noexcept { return code != Code::Ok; }
+};
+
+typedef usz FileDescriptor;
+
+fn WriteResult write(FileDescriptor fd, mc c) noexcept;
+
+fn WriteResult write_all(FileDescriptor fd, mc c) noexcept {
+  var usz i = 0;
+  while (i < c.len) {
+    var WriteResult r = write(fd, c.slice_from(i));
+    i += r.n;
+
+    if (r.is_err()) {
+      return WriteResult(r.code, i);
+    }
+  }
+
+  return WriteResult(c.len);
+}
+
+struct BufFileWriter {
+  // Internal buffer for storing raw bytes before
+  // commiting accumulated writes to file
+  bb buf;
+
+  // File descriptor
+  //
+  // Actual meaning of this number is platform-specific
+  FileDescriptor fd;
+
+  let BufFileWriter(FileDescriptor f, mc c) noexcept : buf(bb(c)), fd(f) {}
+
+  method WriteResult write(mc c) noexcept {
+    var usz i = 0;
+    while (i < c.len) {
+      var usz n = buf.write(c.slice_from(i));
+      i += n;
+      if (n == 0) {
+        var WriteResult r = flush();
+        if (r.is_err()) {
+          return WriteResult(r.code, i);
+        }
+      }
+    }
+
+    return WriteResult(c.len);
+  }
+
+  // Commits stored writes to underlying file (designated by file descriptor)
+  method WriteResult flush() noexcept {
+    var WriteResult r = write_all(fd, buf.head());
+    if (r.is_err()) {
+      return r;
+    }
+
+    buf.reset();
+    return r;
+  }
+};
+
+}  // namespace fs
+
 namespace hash {
 
 internal const u64 offset_fnv64 = 14695981039346656037ULL;
@@ -1708,5 +1818,20 @@ fn inline bool is_binary_digit(rune r) noexcept {
 }
 
 }  // namespace text
+
+namespace bits {
+
+fn inline u32 upper_power_of_two(u32 v) noexcept {
+  v -= 1;
+  v |= v >> 1;
+  v |= v >> 2;
+  v |= v >> 4;
+  v |= v >> 8;
+  v |= v >> 16;
+  v += 1;
+  return v;
+}
+
+}  // namespace bits
 
 #endif  // GUARD_CORE_HPP

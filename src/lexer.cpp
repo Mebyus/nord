@@ -24,11 +24,11 @@ struct Lexer {
   // next byte
   u8 next;
 
-  // lexer reached end of line
-  bool eol;
+  // lexer reached end of input
+  bool eof;
 
   let Lexer(FlatMap* m, str s) noexcept
-      : text(s), map(m), pos(0), i(0), mark(0), c(0), next(0), eol(false) {
+      : text(s), map(m), pos(0), i(0), mark(0), c(0), next(0), eof(false) {
     //
     // prefill next and current bytes
     advance();
@@ -38,7 +38,7 @@ struct Lexer {
   }
 
   method void advance() noexcept {
-    if (eol) {
+    if (eof) {
       return;
     }
 
@@ -46,7 +46,7 @@ struct Lexer {
     pos += 1;
 
     if (i >= text.len) {
-      eol = true;
+      eof = pos >= text.len;
       return;
     }
 
@@ -55,7 +55,7 @@ struct Lexer {
   }
 
   method Token lex() noexcept {
-    if (eol) {
+    if (eof) {
       return Token(Token::Kind::EOL);
     }
 
@@ -93,17 +93,58 @@ struct Lexer {
   method Token whitespace() noexcept {
     switch (c) {
       case ' ': {
-        break;
+        return space();
       }
       case '\t': {
-        break;
+        return tab();
+      }
+      case '\n': {
+        return new_line();
       }
       case '\r': {
-        break;
+        return no_print();
       }
-      default:
+      default: {
         unreachable();
+      }
     }
+  }
+
+  method Token space() noexcept {
+    advance();
+    var u16 count = 1;
+
+    while (!eof && c == ' ') {
+      advance();
+      count += 1;
+    }
+
+    return Token(Token::Kind::SPACE, count);
+  }
+
+  method Token tab() noexcept {
+    advance();
+    var u16 count = 1;
+
+    while (!eof && c == '\t') {
+      advance();
+      count += 1;
+    }
+
+    return Token(Token::Kind::TAB, count);
+  }
+
+  method Token no_print() noexcept {
+    const u16 val = c;
+    advance();
+
+    return Token(Token::Kind::NO_PRINT, val);
+  }
+
+  method Token new_line() noexcept {
+    advance();
+
+    return Token(Token::Kind::NEW_LINE);
   }
 
   method Token word() noexcept {
@@ -111,7 +152,7 @@ struct Lexer {
 
     advance();
 
-    while (!eol && text::is_alphanum(c)) {
+    while (!eof && text::is_alphanum(c)) {
       advance();
     }
 
@@ -123,7 +164,7 @@ struct Lexer {
 
     advance();
 
-    while (!eol && text::is_hexadecimal_digit(c)) {
+    while (!eof && text::is_hexadecimal_digit(c)) {
       advance();
     }
 
@@ -135,7 +176,7 @@ struct Lexer {
 
     advance();  // consume '#'
 
-    while (!eol && text::is_latin_letter(c)) {
+    while (!eof && text::is_latin_letter(c)) {
       advance();
     }
 
@@ -148,7 +189,7 @@ struct Lexer {
     advance();  // consume '/'
     advance();  // consume '/'
 
-    while (!eol) {
+    while (!eof) {
       advance();
     }
 
@@ -160,7 +201,7 @@ struct Lexer {
 
     advance();  // consume '"'
 
-    while (!eol && c != '"') {
+    while (!eof && c != '"') {
       advance();
     }
 
@@ -171,9 +212,27 @@ struct Lexer {
     return Token(Token::Kind::STRING, stop());
   }
 
-  method Token character() noexcept {}
+  method Token character() noexcept {
+    start();
 
-  method Token other() noexcept {}
+    advance();  // consume '\''
+
+    while (!eof && c != '\'') {
+      advance();
+    }
+
+    if (c == '\'') {
+      advance();
+    }
+
+    return Token(Token::Kind::CHARACTER, stop());
+  }
+
+  method Token other() noexcept {
+    advance();
+
+    return Token(Token::Kind::PUNCTUATOR);
+  }
 
   // place mark at current scan position
   method void start() noexcept { mark = pos; }
@@ -182,5 +241,105 @@ struct Lexer {
   // scan position
   method str stop() noexcept { return text.slice(mark, pos); }
 };
+
+}  // namespace nord
+
+var mc token_mnemonics[] = {
+    mc(macro_static_str("EMPTY")),       // EMPTY
+    mc(macro_static_str("EOF")),         // EOL
+    mc(macro_static_str("DIRECTIVE")),   // DIRECTIVE
+    mc(macro_static_str("KEYWORD_1")),   // KEYWORD_GROUP_1
+    mc(macro_static_str("KEYWORD_2")),   // KEYWORD_GROUP_2
+    mc(macro_static_str("BUILTIN")),     // BUILTIN
+    mc(macro_static_str("IDENTIFIER")),  // IDENTIFIER
+    mc(macro_static_str("STRING")),      // STRING
+    mc(macro_static_str("CHARACTER")),   // CHARACTER
+    mc(macro_static_str("COMMENT")),     // COMMENT
+    mc(macro_static_str("NUMBER")),      // NUMBER
+    mc(macro_static_str("OPERATOR")),    // OPERATOR
+    mc(macro_static_str("PUNCTUATOR")),  // PUNCTUATOR
+    mc(macro_static_str("SPACE")),       // SPACE
+    mc(macro_static_str("TAB")),         // TAB
+    mc(macro_static_str("NEW_LINE")),    // NEW_LINE
+    mc(macro_static_str("NO_PRINT")),    // NO_PRINT
+};
+
+method usz Token::fmt(mc c) noexcept {
+  var bb buf = bb(c);
+
+  const str mnemonic = token_mnemonics[cast(u8, kind)];
+  buf.write(mnemonic);
+  if (has_no_lit()) {
+    return buf.len;
+  }
+
+  const usz mnemonic_pad_length = 16;
+  buf.write_repeat(mnemonic_pad_length - mnemonic.len, ' ');
+
+  switch (kind) {
+    case Kind::EMPTY: {
+      unreachable();
+    }
+    case Kind::EOL: {
+      unreachable();
+    }
+
+    case Kind::KEYWORD_GROUP_1:
+    case Kind::KEYWORD_GROUP_2:
+    case Kind::DIRECTIVE:
+    case Kind::BUILTIN:
+    case Kind::STRING:
+    case Kind::CHARACTER:
+    case Kind::COMMENT:
+    case Kind::NUMBER:
+    case Kind::OPERATOR:
+    case Kind::PUNCTUATOR:
+    case Kind::IDENTIFIER: {
+      buf.write(lit);
+      return buf.len;
+    }
+
+    case Kind::NO_PRINT:
+    case Kind::SPACE:
+    case Kind::TAB: {
+      buf.fmt_dec(val);
+      return buf.len;
+    }
+
+    case Kind::NEW_LINE: {
+      unreachable();
+    }
+    default: {
+      unreachable();
+    }
+  }
+}
+
+namespace nord {
+
+fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer* lx) noexcept {
+  var u8 write_buf[1 << 13];
+  var fs::BufFileWriter w =
+      fs::BufFileWriter(fd, mc(write_buf, sizeof(write_buf)));
+
+  var u8 b[64] dirty;
+  var mc buf = mc(b, sizeof(b));
+  var Token tok dirty;
+  do {
+    tok = lx->lex();
+
+    // keep 1 byte in order to guarantee enough space for
+    // line feed character at the end
+    const usz n = tok.fmt(buf.slice_down(1));
+    buf.slice_from(n).unsafe_write('\n');
+
+    var fs::WriteResult r = w.write(buf.slice_to(n + 1));
+    if (r.is_err()) {
+      return r;
+    }
+  } while (tok.kind != Token::Kind::EOL);
+
+  return w.flush();
+}
 
 }  // namespace nord
