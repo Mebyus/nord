@@ -285,10 +285,14 @@ struct mc {
   // Write specified byte repeated n times to memory chunk
   method usz write_repeat(usz n, u8 x) noexcept {
     n = min(n, len);
+    unsafe_write_repeat(n, x);
+    return n;
+  }
+
+  method void unsafe_write_repeat(usz n, u8 x) noexcept {
     for (usz i = 0; i < n; i += 1) {
       ptr[i] = x;
     }
-    return n;
   }
 };
 
@@ -699,6 +703,12 @@ struct bb {
     const usz k = t.write_repeat(n, x);
     len += k;
     return k;
+  }
+
+  method void unsafe_write_repeat(usz n, u8 x) noexcept {
+    var mc t = tail();
+    t.unsafe_write_repeat(n, x);
+    len += n;
   }
 
   method usz unsafe_write(mc c) noexcept {
@@ -1215,10 +1225,34 @@ struct DynBytesBuffer {
       return;
     }
 
-    const usz n = determine_bytes_grow_amount(buf.cap, buf.len);
+    const usz n = determine_bytes_grow_amount(buf.cap, c.len);
     grow(n);
 
     buf.unsafe_write(c);
+  }
+
+  method void write(u8 x) noexcept {
+    if (buf.rem() >= 1) {
+      buf.unsafe_write(x);
+      return;
+    }
+
+    const usz n = determine_bytes_grow_amount(buf.cap, 1);
+    grow(n);
+
+    buf.unsafe_write(x);
+  }
+
+  method void write_repeat(usz n, u8 x) noexcept {
+    if (buf.rem() >= n) {
+      buf.unsafe_write_repeat(n, x);
+      return;
+    }
+
+    const usz amount = determine_bytes_grow_amount(buf.cap, n);
+    grow(amount);
+
+    buf.unsafe_write_repeat(n, x);
   }
 
   method void free() noexcept {
@@ -1378,7 +1412,7 @@ struct DynBuffer {
       return;
     }
 
-    const usz n = determine_grow_amount(buf.cap, buf.len);
+    const usz n = determine_grow_amount(buf.cap, 1);
     grow(n);
 
     buf.unsafe_append(elem);
@@ -1468,6 +1502,33 @@ struct FileReadResult {
 
 namespace fs {
 
+struct ReadResult {
+  enum struct Code : u32 {
+    Ok,
+
+    EOF,
+
+    // Generic error, no specifics known
+    Error,
+  };
+
+  // Number of bytes read. May be not 0 even if code != Ok
+  usz n;
+
+  Code code;
+
+  let ReadResult() noexcept : n(0), code(Code::Ok) {}
+  let ReadResult(usz k) noexcept : n(k), code(Code::Ok) {}
+  let ReadResult(Code c) noexcept : n(0), code(c) {}
+  let ReadResult(Code c, usz k) noexcept : n(k), code(c) {}
+
+  method bool is_ok() noexcept { return code == Code::Ok; }
+  method bool is_eof() noexcept { return code == Code::EOF; }
+  method bool is_err() noexcept {
+    return code != Code::Ok && code != Code::EOF;
+  }
+};
+
 struct WriteResult {
   enum struct Code : u32 {
     Ok,
@@ -1491,6 +1552,22 @@ struct WriteResult {
 };
 
 typedef usz FileDescriptor;
+
+fn ReadResult read(FileDescriptor fd, mc c) noexcept;
+
+fn ReadResult read_all(FileDescriptor fd, mc c) noexcept {
+  var usz i = 0;
+  while (i < c.len) {
+    var ReadResult r = read(fd, c.slice_from(i));
+    i += r.n;
+
+    if (!r.is_ok()) {
+      return ReadResult(r.code, i);
+    }
+  }
+
+  return ReadResult(c.len);
+}
 
 fn WriteResult write(FileDescriptor fd, mc c) noexcept;
 
@@ -1833,5 +1910,22 @@ fn inline u32 upper_power_of_two(u32 v) noexcept {
 }
 
 }  // namespace bits
+
+namespace strconv {
+
+fn inline u8 charcode_to_decimal_digit(u8 c) noexcept {
+  return c - cast(u8, '0');
+}
+
+fn u64 unsafe_parse_dec(str s) noexcept {
+  var u64 n = 0;
+  for (usz i = 0; i < s.len; i += 1) {
+    n *= 10;
+    n += charcode_to_decimal_digit(s.ptr[i]);
+  }
+  return n;
+}
+
+}  // namespace strconv
 
 #endif  // GUARD_CORE_HPP

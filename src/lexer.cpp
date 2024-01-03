@@ -35,6 +35,7 @@ struct Lexer {
     advance();
 
     pos = 0;
+    eof = text.len == 0;
   }
 
   method void advance() noexcept {
@@ -56,7 +57,7 @@ struct Lexer {
 
   method Token lex() noexcept {
     if (eof) {
-      return Token(Token::Kind::EOL);
+      return Token(Token::Kind::EOF);
     }
 
     if (text::is_simple_whitespace(c)) {
@@ -156,7 +157,13 @@ struct Lexer {
       advance();
     }
 
-    return Token(Token::Kind::IDENTIFIER, stop());
+    var str w = stop();
+    const FlatMap::Item item = map->get(w);
+    if (item.ok) {
+      return Token(item.value, w);
+    }
+
+    return Token(Token::Kind::IDENTIFIER, w);
   }
 
   method Token number() noexcept {
@@ -189,7 +196,7 @@ struct Lexer {
     advance();  // consume '/'
     advance();  // consume '/'
 
-    while (!eof) {
+    while (!eof && c != '\n') {
       advance();
     }
 
@@ -229,9 +236,11 @@ struct Lexer {
   }
 
   method Token other() noexcept {
+    start();
+
     advance();
 
-    return Token(Token::Kind::PUNCTUATOR);
+    return Token(Token::Kind::PUNCTUATOR, stop());
   }
 
   // place mark at current scan position
@@ -246,7 +255,7 @@ struct Lexer {
 
 var mc token_mnemonics[] = {
     mc(macro_static_str("EMPTY")),       // EMPTY
-    mc(macro_static_str("EOF")),         // EOL
+    mc(macro_static_str("EOF")),         // EOF
     mc(macro_static_str("DIRECTIVE")),   // DIRECTIVE
     mc(macro_static_str("KEYWORD_1")),   // KEYWORD_GROUP_1
     mc(macro_static_str("KEYWORD_2")),   // KEYWORD_GROUP_2
@@ -280,7 +289,7 @@ method usz Token::fmt(mc c) noexcept {
     case Kind::EMPTY: {
       unreachable();
     }
-    case Kind::EOL: {
+    case Kind::EOF: {
       unreachable();
     }
 
@@ -337,7 +346,7 @@ fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer& lx) noexcept {
     if (r.is_err()) {
       return r;
     }
-  } while (tok.kind != Token::Kind::EOL);
+  } while (tok.kind != Token::Kind::EOF);
 
   return w.flush();
 }

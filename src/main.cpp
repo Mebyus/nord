@@ -205,8 +205,13 @@ struct Color {
   u8 green;
   u8 blue;
 
+  let Color() noexcept : red(0), green(0), blue(0) {}
   let Color(u8 r, u8 g, u8 b) noexcept : red(r), green(g), blue(b) {}
 };
+
+constexpr bool operator==(const Color& a, const Color& b) noexcept {
+  return a.red == b.red && a.green == b.green && a.blue == b.blue;
+}
 
 internal const usz terminal_sketch_buffer_size = 32;
 
@@ -222,6 +227,8 @@ struct TerminalOutputBuffer {
   }
 
   method void write(mc c) noexcept { db.write(c); }
+
+  method void write_repeat(usz n, u8 x) noexcept { db.write_repeat(n, x); }
 
   method void change_cursor_position(u32 x, u32 y) noexcept {
     // prepare command string
@@ -269,6 +276,14 @@ struct TerminalOutputBuffer {
 
   method void show_cursor() noexcept { write(macro_static_str("\x1b[?25h")); }
 
+  method void enter_alt_screen() noexcept {
+    write(macro_static_str("\x1b[?1049h"));
+  }
+
+  method void exit_alt_screen() noexcept {
+    write(macro_static_str("\x1b[?1049l"));
+  }
+
   // Begin new line in output
   method void nl() noexcept { write(macro_static_str("\r\n")); }
 
@@ -285,7 +300,7 @@ struct TerminalOutputBuffer {
 struct Token {
   enum struct Kind : u8 {
     EMPTY = 0,
-    EOL,
+    EOF,
     DIRECTIVE,
     KEYWORD_GROUP_1,
     KEYWORD_GROUP_2,
@@ -330,8 +345,30 @@ struct Token {
   method usz fmt(mc c) noexcept;
 
   method bool has_no_lit() noexcept {
-    return kind == Kind::EMPTY || kind == Kind::EOL || kind == Kind::NEW_LINE;
+    return kind == Kind::EMPTY || kind == Kind::EOF || kind == Kind::NEW_LINE;
   }
+};
+
+internal const Color default_color = Color(0xAB, 0xB2, 0xBF);
+
+internal const Color style[] = {
+    default_color,            // EMPTY
+    default_color,            // EOF
+    Color(0x56, 0xB6, 0xC2),  // DIRECTIVE
+    Color(0xE0, 0x6C, 0x75),  // KEYWORD_GROUP_1
+    default_color,            // KEYWORD_GROUP_2
+    Color(0x61, 0xAF, 0xEF),  // BUILTIN
+    default_color,            // IDENTIFIER
+    Color(0xE5, 0xC0, 0x7B),  // STRING
+    Color(0xE5, 0xC0, 0x7B),  // CHARACTER
+    Color(0x84, 0xAC, 0x6E),  // COMMENT
+    Color(0xC6, 0x78, 0xDD),  // NUMBER
+    default_color,            // OPERATOR
+    default_color,            // PUNCTUATOR
+    default_color,            // SPACE
+    default_color,            // TAB
+    default_color,            // NEW_LINE
+    default_color,            // NO_PRINT
 };
 
 internal const Token static_literals_table[] = {
@@ -571,25 +608,32 @@ struct FlatMap {
   }
 };
 
-struct TextLine {
-  // bytes that constitutes a line of text, not including
-  // trailing newline characters
-  mc data;
-};
+var internal FlatMap token_kind_map = FlatMap(256, 0xFF, FLAT_MAP_SEED);
 
 #include "lexer.cpp"
 
-fn DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
+struct TextLine {
+  DynBuffer<Token> tokens;
+
+  // bytes that constitutes a line of text, not including
+  // trailing newline characters
+  mc data;
+
+  let TextLine(str text) noexcept : tokens(DynBuffer<Token>()), data(text) {}
+};
+
+fn internal DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
   if (line.is_nil()) {
     return DynBuffer<Token>();
   }
 
   var DynBuffer<Token> buf = DynBuffer<Token>();
-  var nord::Lexer lexer = nord::Lexer(map, line);
+  var nord::Lexer lx = nord::Lexer(map, line);
 
-  var Token tok = lexer.lex();
-  while (tok.kind != Token::Kind::EOL) {
+  var Token tok = lx.lex();
+  while (tok.kind != Token::Kind::EOF) {
     buf.append(tok);
+    tok = lx.lex();
   }
 
   return buf;
@@ -621,7 +665,7 @@ fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
 
     if (c == '\n') {
       const mc line = text.slice(start, end);
-      const TextLine text_line = {.data = line};
+      const TextLine text_line = TextLine(line);
 
       buf.append(text_line);
 
@@ -641,7 +685,7 @@ fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
 
   // save last line
   const mc line = text.slice(start, end);
-  const TextLine text_line = {.data = line};
+  const TextLine text_line = TextLine(line);
   buf.append(text_line);
 
   j += 1;
@@ -711,6 +755,8 @@ struct Editor {
   // number of rows in jump when page up/down is pressed
   u32 viewport_page_stride;
 
+  Color text_color;
+
   bool full_viewport_upd_flag;
 
   let Editor() noexcept {}
@@ -739,11 +785,21 @@ struct Editor {
     init_terminal();
 
     term_buf.hide_cursor();
+    term_buf.set_background_color(Color(0x20, 0x20, 0x20));
+    term_buf.flush();
     clear_window();
     draw_text();
     term_buf.show_cursor();
     update_cursor_position();
     term_buf.flush();
+  }
+
+  method void change_text_color(Color color) noexcept {
+    if (text_color == color) {
+      return;
+    }
+
+    term_buf.set_text_color(color);
   }
 
   method void init_terminal() noexcept {
@@ -758,6 +814,8 @@ struct Editor {
     enter_raw_mode();
 
     term_buf = TerminalOutputBuffer(COMMAND_BUFFER_INITIAL_SIZE);
+    term_buf.enter_alt_screen();
+    term_buf.flush();
 
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
@@ -779,15 +837,16 @@ struct Editor {
     var usz gutter_width = max(cast(usz, 4 + 3), line_number_width + 3);
 
     // y coordinate inside viewport
-    u32 y = 0;
+    var u32 y = 0;
+
+    const u32 max_text_width = cols_num - cast(u32, gutter_width);
 
     // line index which is drawn at current y coordinate
-    usz j = vy;
+    var usz j = vy;
     while (y < rows_num - 1 && j < lines.len()) {
       mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
       term_buf.write(line_gutter);
-      term_buf.write(
-          lines.buf.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
+      draw_line(j, max_text_width);
       term_buf.nl();
 
       y += 1;
@@ -798,8 +857,30 @@ struct Editor {
     if (y == rows_num - 1 && j < lines.len()) {
       mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
       term_buf.write(line_gutter);
-      term_buf.write(
-          lines.buf.ptr[j].data.crop(cols_num - cast(u32, gutter_width)));
+      draw_line(j, max_text_width);
+    }
+  }
+
+  method void draw_line(usz k, u32 max_width) noexcept {
+    nop_use(max_width);
+
+    var TextLine line = lines.buf.ptr[k];
+
+    if (line.tokens.buf.is_nil()) {
+      // cache tokenization result for this line
+      line.tokens = tokenize_line(&token_kind_map, line.data);
+      lines.buf.ptr[k] = line;
+    }
+
+    for (usz i = 0; i < line.tokens.buf.len; i += 1) {
+      var Token tok = line.tokens.buf.ptr[i];
+
+      if (tok.kind == Token::Kind::SPACE) {
+        term_buf.write_repeat(cast(usz, tok.val), ' ');
+      } else {
+        change_text_color(style[cast(usz, tok.kind)]);
+        term_buf.write(tok.lit);
+      }
     }
   }
 
@@ -991,7 +1072,8 @@ fn internal Editor::Key read_key_input() noexcept {
 fn internal void handle_key_input(Editor::Key k) noexcept {
   if (k.s == Editor::Seq::REGULAR) {
     if (k.c == CTRL_KEY('q')) {
-      e.clear_window();
+      e.term_buf.exit_alt_screen();
+      e.term_buf.flush();
       exit(0);
     }
     return;
@@ -1099,12 +1181,14 @@ fn FlatMap fit_into_flat_map(usz cap,
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  var str text = macro_static_str("\"hello\"  \t world \n 12.3");
-  // var str text = macro_static_str("");
-  var nord::Lexer lx = nord::Lexer(nil, text);
-  nord::dump_tokens(1, lx);
-  return 0;
+  // var str text = macro_static_str("\"hello\"  \t world \n 12.3");
+  // // var str text = macro_static_str("}}");
+  // var nord::Lexer lx = nord::Lexer(nil, text);
+  // nord::dump_tokens(1, lx);
+  // return 0;
 
+  populate_flat_map(token_kind_map,
+                    chunk<Token>(cast(Token*, static_literals_table), 59));
   if (argc < 2) {
     e.init();
   } else {
