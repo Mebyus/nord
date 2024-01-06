@@ -294,6 +294,8 @@ struct mc {
       ptr[i] = x;
     }
   }
+
+  method usz unsafe_fmt_dec(u64 x) noexcept;
 };
 
 typedef mc str;
@@ -304,7 +306,6 @@ typedef mc str;
 #define macro_src_file str((u8*)__FILE__, sizeof(__FILE__) - 1)
 #define macro_src_line cast(u32, __LINE__)
 
-internal const u8 max_small_decimal = 99;
 internal const u8 small_decimals_string[] =
     "00010203040506070809"
     "10111213141516171819"
@@ -534,7 +535,15 @@ method usz mc::fmt_dec(u8 x) noexcept {
 }
 
 method usz mc::fmt_dec(u64 x) noexcept {
+  const usz max_u64_dec_length = 20;
+  if (len >= max_u64_dec_length) {
+    return unsafe_fmt_dec(x);
+  }
+
   if (x < 10) {
+    if (len == 0) {
+      return 0;
+    }
     ptr[0] = decimal_digit_to_charcode((u8)x);
     return 1;
   }
@@ -560,6 +569,31 @@ method usz mc::fmt_dec(u64 x) noexcept {
     // chunk does not have enough space to represent given number
     return 0;
   }
+
+  var mc c = mc(ptr, i);
+  c.reverse();
+  return i;
+}
+
+method usz mc::unsafe_fmt_dec(u64 x) noexcept {
+  if (x < 10) {
+    ptr[0] = decimal_digit_to_charcode((u8)x);
+    return 1;
+  }
+  if (x < 100) {
+    var u8 offset = cast(u8, x) << 1;
+    ptr[0] = small_decimals_string[offset];
+    ptr[1] = small_decimals_string[offset + 1];
+    return 2;
+  }
+
+  var usz i = 0;
+  do {  // generate digits in reverse order
+    var u8 digit = cast(u8, x % 10);
+    x /= 10;
+    ptr[i] = decimal_digit_to_charcode(digit);
+    i += 1;
+  } while (x != 0);
 
   var mc c = mc(ptr, i);
   c.reverse();
@@ -754,6 +788,17 @@ struct bb {
   method usz fmt_dec(u16 x) noexcept { return fmt_dec(cast(u64, x)); }
 
   method usz fmt_dec(u32 x) noexcept { return fmt_dec(cast(u64, x)); }
+
+  method usz unsafe_fmt_dec(u32 x) noexcept {
+    return unsafe_fmt_dec(cast(u64, x));
+  }
+
+  method usz unsafe_fmt_dec(u64 x) noexcept {
+    var mc t = tail();
+    var usz w = t.unsafe_fmt_dec(x);
+    len += w;
+    return w;
+  }
 
   method usz fmt_dec(u64 x) noexcept {
     if (is_full()) {
@@ -1486,6 +1531,8 @@ struct FileReadResult {
 
     // Generic error, no specifics known
     Error,
+
+    AlreadyExists,
   };
 
   mc data;

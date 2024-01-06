@@ -8,6 +8,7 @@
 #include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "core.hpp"
@@ -15,12 +16,7 @@
 #include "core_linux.cpp"
 
 fn void copy(u8* src, u8* dst, usz n) noexcept {
-  if (n <= 16) {
-    for (usz i = 0; i < n; i += 1) {
-      dst[i] = src[i];
-    }
-    return;
-  }
+  must(n != 0);
 
   memcpy(dst, src, n);
 }
@@ -96,6 +92,9 @@ fn FileReadResult read_file(cstr filename) noexcept {
   var dirty struct stat s;
   var i32 rcode = stat(cast(char*, filename.ptr), &s);
   if (rcode < 0) {
+    if (errno == EEXIST) {
+      return FileReadResult(FileReadResult::Code::AlreadyExists);
+    }
     return FileReadResult(FileReadResult::Code::Error);
   }
 
@@ -107,6 +106,9 @@ fn FileReadResult read_file(cstr filename) noexcept {
 
   const i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
   if (fd < 0) {
+    if (errno == EEXIST) {
+      return FileReadResult(FileReadResult::Code::AlreadyExists);
+    }
     return FileReadResult(FileReadResult::Code::Error);
   }
 

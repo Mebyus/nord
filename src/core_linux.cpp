@@ -1,3 +1,13 @@
+#include <time.h>
+
+// namespace time
+// {
+//   fn void clock () {
+//     var struct timespec ts;
+//     clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
+//   }
+// } // namespace time
+
 namespace fs {
 
 fn ReadResult read(FileDescriptor fd, mc c) noexcept {
