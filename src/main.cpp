@@ -17,6 +17,7 @@
 
 fn void copy(u8* src, u8* dst, usz n) noexcept {
   must(n != 0);
+  must(src != dst);
 
   memcpy(dst, src, n);
 }
@@ -1183,6 +1184,7 @@ fn FlatMap fit_into_flat_map(usz cap,
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
+
   // var str text = macro_static_str("\"hello\"  \t world \n 12.3");
   // // var str text = macro_static_str("}}");
   // var nord::Lexer lx = nord::Lexer(nil, text);

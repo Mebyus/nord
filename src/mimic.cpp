@@ -90,8 +90,23 @@ struct Token {
     Punctuator,
   };
 
+  enum struct Illegal : u8 {
+    Empty = 0,
+
+    MalformedString,
+
+    UnrecognizedDirective,
+
+    // Token exceeds max token length
+    DirectiveOverflow,
+
+    WordOverflow,
+
+    StringOverflow,
+  };
+
   enum struct Directive : u8 {
-    Empty,
+    Empty = 0,
 
     Include,
 
@@ -109,7 +124,7 @@ struct Token {
   };
 
   enum struct Keyword : u8 {
-    Empty,
+    Empty = 0,
 
     Var,
     Const,
@@ -151,7 +166,7 @@ struct Token {
   };
 
   enum struct Builtin : u8 {
-    Empty,
+    Empty = 0,
 
     Sizeof,
     Cast,
@@ -197,7 +212,7 @@ struct Token {
   };
 
   enum struct Assign : u8 {
-    Empty,
+    Empty = 0,
 
     Regular,
 
@@ -209,7 +224,7 @@ struct Token {
   };
 
   enum struct Bracket : u8 {
-    Empty,
+    Empty = 0,
 
     LParen,
     RParen,
@@ -225,7 +240,7 @@ struct Token {
   };
 
   enum struct Operator : u8 {
-    Empty,
+    Empty = 0,
 
     Asterisk,
     Ampersand,
@@ -246,7 +261,7 @@ struct Token {
   };
 
   enum struct Punctuator : u8 {
-    Empty,
+    Empty = 0,
 
     Semicolon,
     Comma,
@@ -289,6 +304,18 @@ struct Token {
     // Three u64 integers for fast s23 member comparison
     // between each other
     u64 fc[3];
+
+    let Literal() noexcept {}
+
+    let Literal(Illegal subkind) noexcept : val(cast(u64, subkind)) {}
+  };
+
+  enum struct Flags : u8 {
+    // This flag is raised if token literal is not
+    // small enough to fit into lit.s23 internal bytes array
+    // and instead is stored as a string allocated somewhere
+    // else
+    TextLiteral = 1,
   };
 
   Literal lit;
@@ -299,7 +326,20 @@ struct Token {
 
   // Meaning depends on the value of field kind
   u8 flags;
+
+  // let Token() noexcept : lit(Literal()), pos(Pos()), kind(Kind::Empty),
+  // flags(0) {}
+
+  let Token(Pos p, Kind k) noexcept
+      : lit(Literal()), pos(p), kind(k), flags(0) {}
+
+  let Token(Pos p, Illegal subkind) noexcept
+      : lit(Literal(subkind)), pos(p), kind(Kind::Illegal), flags(0) {}
 };
+
+internal const usz max_token_byte_length = 1 << 10;
+
+internal const usz max_small_token_byte_length = 23;
 
 // Lexer scans input text in line outputs tokens in sequential
 // manner
@@ -317,6 +357,10 @@ struct Lexer {
   //  - keywords
   //  - builtins
   // FlatMap* map;
+
+  // Memory arena that is used to allocate space for
+  // token literals
+  mem::Arena* arena;
 
   // next byte read index
   u32 i;
@@ -380,6 +424,38 @@ struct Lexer {
     i += 1;
   }
 
+  method void consume_word() noexcept {
+    while (!eof && text::is_alphanum(c)) {
+      advance();
+    }
+  }
+
+  // create a simple token at current scan position
+  method Token create(Token::Kind kind) noexcept { return Token(pos, kind); }
+
+  method Token create_text_token(Pos p, Token::Kind kind, str ss) noexcept {
+    must(!ss.is_nil());
+
+    var Token::Literal lit = Token::Literal();
+    var Token tok = Token(p, kind);
+
+    if (ss.len > max_small_token_byte_length) {
+      lit.text = arena->allocate_copy(ss);
+      tok.lit = lit;
+      tok.flags = cast(u8, Token::Flags::TextLiteral);
+      return tok;
+    }
+
+    lit.s23[23] = cast(u8, ss.len);
+    copy(ss.ptr, lit.s23, ss.len);
+    tok.lit = lit;
+    return tok;
+  }
+
+  method Token identifier(Pos p, str ss) noexcept {
+    return create_text_token(p, Token::Kind::Identifier, ss);
+  }
+
   // place mark at current scan position
   method void start() noexcept { mark = s; }
 
@@ -404,8 +480,8 @@ struct Lexer {
   }
 
   method void skip_line_comment() noexcept {
-    advance(); // skip '/'
-    advance(); // skip '/'
+    advance();  // skip '/'
+    advance();  // skip '/'
     skip_line();
   }
 
@@ -422,12 +498,12 @@ struct Lexer {
 
   method Token lex() noexcept {
     if (eof) {
-      return Token(Token::Kind::EOF);
+      return create(Token::Kind::EOF);
     }
 
     skip_whitespace_and_comments();
     if (eof) {
-      return Token(Token::Kind::EOF);
+      return create(Token::Kind::EOF);
     }
 
     if (text::is_latin_letter_or_underscore(c)) {
@@ -451,6 +527,80 @@ struct Lexer {
     }
 
     return other();
+  }
+
+  method Token word() noexcept {
+    const Pos p = pos;
+    start();
+    advance();  // skip first symbol
+    consume_word();
+    var str w = stop();
+
+    if (w.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::WordOverflow);
+    }
+
+    // TODO: add special tokens detection
+    // const FlatMap::Item item = map->get(w);
+    // if (item.ok) {
+    //   return Token(item.value, w);
+    // }
+
+    return identifier(p, w);
+  }
+
+  method Token string() noexcept {
+    const Pos p = pos;
+    advance();  // skip '"'
+    start();
+
+    while (!eof && c != '\n' && c != '"') {
+      if (c == '\\' && next == '"') {
+        // skip escape sequence
+        advance();
+      }
+      advance();
+    }
+
+    if (c != '"') {
+      return Token(p, Token::Illegal::MalformedString);
+    }
+
+    var str ss = stop();
+    advance();  // skip '"'
+
+    if (ss.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::StringOverflow);
+    }
+
+    return create_text_token(p, Token::Kind::String, ss);
+  }
+
+  method Token directive() noexcept {
+    const Pos p = pos;
+    start();
+    advance();  // skip '#'
+    consume_word();
+    var str w = stop();
+
+    if (w.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::DirectiveOverflow);
+    }
+
+    // TODO: directive detection
+    return Token(p, Token::Illegal::UnrecognizedDirective);
+  }
+
+  method Token other() noexcept {
+    switch (c) {
+      case '{': {
+        break;
+      }
+
+      default: {
+        break;
+      }
+    }
   }
 };
 

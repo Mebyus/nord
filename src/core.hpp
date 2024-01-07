@@ -39,6 +39,8 @@
 // Macro to compute chunk size in bytes to hold n elements of type T
 #define chunk_size(T, n) ((n) * sizeof(T))
 
+#define bit_cast(T, x) __builtin_bit_cast(T, x)
+
 // Dummy usage for variable, argument or constant
 //
 // Suppresses compiler warnings
@@ -984,9 +986,95 @@ struct buffer {
   method chunk<T> body() noexcept { return chunk<T>(ptr, cap); }
 };
 
+namespace bits {
+
+fn inline bool is_aligned_16(anyptr x) noexcept {
+  return (cast(uptr, x) & 0x0F) == 0;
+}
+
+fn inline bool is_aligned_16(usz x) noexcept {
+  return (x & 0x0F) == 0;
+}
+
+fn inline usz align_16(usz x) noexcept {
+  usz a = x & 0x0F;
+  a = ((~a) + 1) & 0x0F;
+  return x + a;
+}
+
+}  // namespace bits
+
 namespace mem {
 
-struct Arena {};
+struct Arena {
+  // Internal buffer which is used for allocating chunks
+  mc buf;
+
+  // Position of next chunk to be allocated. Can also be
+  // interpreted as total amount of bytes already used
+  // inside arena
+  usz pos;
+
+  // Previous value of pos field. Used for popping previously
+  // allocated chunk
+  // usz prev;
+
+  let Arena(mc c) noexcept : buf(c), pos(0) {
+    must(!c.is_nil());
+    must(bits::is_aligned_16(c.ptr));
+  }
+
+  // Allocate at least n bytes of memory
+  //
+  // Returns allocated memory chunk. Note that its length
+  // may be bigger than number of bytes requested
+  method mc alloc(usz n) noexcept {
+    must(n != 0);
+
+    n = bits::align_16(n);
+    must(n <= rem());
+
+    const usz prev = pos;
+    pos += n;
+
+    return buf.slice(prev, pos);
+  }
+
+  // Allocate a non-overlapping copy of given memory chunk.
+  // In contrast with alloc method returned chunk will be
+  // of exactly the same length as original one
+  //
+  // Clients cannot pop back the memory allocated via
+  // this method
+  method mc allocate_copy(mc c) noexcept {
+    var mc cp = alloc(c.len);
+    cp.unsafe_write(c);
+    return cp.slice_to(c.len);
+  }
+
+  method usz rem() noexcept { return buf.len - pos; }
+
+  // Pop n bytes from previous allocations, marking them as
+  // available for next allocations. Popped memory will no
+  // longer be valid for clients who aliased it
+  //
+  // Use this operation with extreme caution. It is primary usage
+  // intended for deallocating short-lived scratch buffers which
+  // lifetime is limited by narrow scope
+  method void pop(usz n) noexcept {
+    must(n != 0);
+    must(bits::is_aligned_16(n));
+    must(n <= pos);
+
+    pos -= n;
+  }
+
+  // Drops all allocated memory and makes entire buffer
+  // available for future allocations
+  method void reset() noexcept {
+    pos = 0;
+  }
+};
 
 struct Gen {
   let Gen() noexcept {}
@@ -999,6 +1087,13 @@ struct Gen {
       return mc();
     }
     return mc(ptr, n);
+  }
+
+  // Allocate a non-overlapping copy of given memory chunk
+  method mc allocate_copy(mc c) noexcept {
+    var mc cp = alloc(c.len);
+    cp.unsafe_write(c);
+    return cp;
   }
 
   template <typename T>
