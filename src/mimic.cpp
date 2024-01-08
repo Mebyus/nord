@@ -1,3 +1,8 @@
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include "core.hpp"
 
 #include "core_linux.cpp"
@@ -81,28 +86,27 @@ struct Token {
     // Floating point number literal
     Float,
 
-    Assign,
-
-    Bracket,
-
-    Operator,
-
-    Punctuator,
+    Other,
   };
 
   enum struct Illegal : u8 {
     Empty = 0,
 
+    NonPrintableByte,
+
     MalformedString,
+
+    MalformedCharlit,
+
+    MalformedNumber,
 
     UnrecognizedDirective,
 
-    // Token exceeds max token length
-    DirectiveOverflow,
+    // token exceeds max token length
+    LengthOverflow,
 
-    WordOverflow,
-
-    StringOverflow,
+    // number cannot fit into 64 bits
+    NumberOverflow,
   };
 
   enum struct Directive : u8 {
@@ -211,19 +215,7 @@ struct Token {
     NopUse,
   };
 
-  enum struct Assign : u8 {
-    Empty = 0,
-
-    Regular,
-
-    Add,
-    Sub,
-    Mult,
-    Div,
-    Rem,
-  };
-
-  enum struct Bracket : u8 {
+  enum struct Other : u8 {
     Empty = 0,
 
     LParen,
@@ -237,10 +229,6 @@ struct Token {
 
     LAngle,
     RAngle,
-  };
-
-  enum struct Operator : u8 {
-    Empty = 0,
 
     Asterisk,
     Ampersand,
@@ -256,12 +244,9 @@ struct Token {
     LShift,
     RShift,
 
+    Equal,
     LogicalAnd,
     LogicalOr,
-  };
-
-  enum struct Punctuator : u8 {
-    Empty = 0,
 
     Semicolon,
     Comma,
@@ -271,6 +256,21 @@ struct Token {
     DoubleColon,
 
     RightArrow,
+    MemberAccess,
+
+    Assign,
+    AssignAdd,
+    AssignSub,
+    AssignMult,
+    AssignDiv,
+    AssignRem,
+  };
+
+  // Pair of kind + subkind to which exactly identifies
+  // special word token
+  struct WordSpec {
+    Kind kind;
+    u8 subkind;
   };
 
   union Literal {
@@ -308,6 +308,10 @@ struct Token {
     let Literal() noexcept {}
 
     let Literal(Illegal subkind) noexcept : val(cast(u64, subkind)) {}
+
+    let Literal(Other subkind) noexcept : val(cast(u64, subkind)) {}
+
+    let Literal(u64 v) noexcept : val(v) {}
   };
 
   enum struct Flags : u8 {
@@ -330,12 +334,85 @@ struct Token {
   // let Token() noexcept : lit(Literal()), pos(Pos()), kind(Kind::Empty),
   // flags(0) {}
 
+  let Token() noexcept {}
+
   let Token(Pos p, Kind k) noexcept
       : lit(Literal()), pos(p), kind(k), flags(0) {}
 
   let Token(Pos p, Illegal subkind) noexcept
       : lit(Literal(subkind)), pos(p), kind(Kind::Illegal), flags(0) {}
+
+  let Token(Pos p, Other subkind) noexcept
+      : lit(Literal(subkind)), pos(p), kind(Kind::Other), flags(0) {}
+
+  let Token(Pos p, u64 v) noexcept
+      : lit(Literal(v)), pos(p), kind(Kind::Empty), flags(0) {}
+
+  method bool has_no_lit() noexcept {
+    return kind == Kind::Empty || kind == Kind::EOF;
+  }
+
+  // Output token into supplied memory chunk in
+  // human readable format
+  method usz fmt(mc c) noexcept;
 };
+
+var str token_mnemonics[] = {
+    str(macro_static_str("EMPTY")),       //
+    str(macro_static_str("ILLEGAL")),     //
+    str(macro_static_str("EOF")),         //
+    str(macro_static_str("DIRECTIVE")),   //
+    str(macro_static_str("KEYWORD")),     //
+    str(macro_static_str("BUILTIN")),     //
+    str(macro_static_str("IDENTIFIER")),  //
+    str(macro_static_str("STRING")),      //
+    str(macro_static_str("CHARLIT")),     //
+    str(macro_static_str("INTEGER")),     //
+    str(macro_static_str("FLOAT")),       //
+    str(macro_static_str("OTHER")),       //
+};
+
+method usz Token::fmt(mc c) noexcept {
+  var bb buf = bb(c);
+
+  const str mnemonic = token_mnemonics[cast(u8, kind)];
+  buf.write(mnemonic);
+  if (has_no_lit()) {
+    return buf.len;
+  }
+
+  const usz mnemonic_pad_length = 16;
+  buf.write_repeat(mnemonic_pad_length - mnemonic.len, ' ');
+
+  switch (kind) {
+    case Kind::Keyword:
+    case Kind::Directive:
+    case Kind::Builtin:
+    case Kind::Charlit:
+    case Kind::Float:
+    case Kind::String:
+    case Kind::Identifier: {
+      buf.write(lit);
+      return buf.len;
+    }
+
+    case Kind::Integer: {
+      buf.fmt_dec(val);
+      return buf.len;
+    }
+
+    case Kind::Other: {
+    }
+
+    case Kind::Illegal:
+
+    case Kind::Empty:
+    case Kind::EOF:
+    default: {
+      unreachable();
+    }
+  }
+}
 
 internal const usz max_token_byte_length = 1 << 10;
 
@@ -356,7 +433,7 @@ struct Lexer {
   //  - directives
   //  - keywords
   //  - builtins
-  // FlatMap* map;
+  container::FlatMap<Token::WordSpec>* map;
 
   // Memory arena that is used to allocate space for
   // token literals
@@ -537,7 +614,7 @@ struct Lexer {
     var str w = stop();
 
     if (w.len > max_token_byte_length) {
-      return Token(p, Token::Illegal::WordOverflow);
+      return Token(p, Token::Illegal::LengthOverflow);
     }
 
     // TODO: add special tokens detection
@@ -547,6 +624,198 @@ struct Lexer {
     // }
 
     return identifier(p, w);
+  }
+
+  method Token number() noexcept {
+    if (c != '0') {
+      return decimal_number();
+    }
+
+    if (next == 'b') {
+      return binary_number();
+    }
+
+    if (next == 'o') {
+      return octal_number();
+    }
+
+    if (next == 'x') {
+      return hexadecimal_number();
+    }
+
+    if (next == '.') {
+      return decimal_number();
+    }
+
+    if (text::is_alphanum(next)) {
+      const Pos p = pos;
+      advance();  // skip '0'
+      advance();  // skip second character
+      consume_word();
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    var Token tok = Token(pos, cast(u64, 0));
+    tok.kind = Token::Kind::Integer;
+
+    advance();
+    return tok;
+  }
+
+  method Token decimal_number() noexcept {
+    const Pos p = pos;
+    start();
+
+    var bool has_period = false;
+    while (!eof && text::is_decimal_digit_or_period(next)) {
+      advance();
+
+      if (next == '.') {
+        if (has_period) {
+          advance();
+          advance();  // skip '.'
+          return Token(p, Token::Illegal::MalformedNumber);
+        }
+        has_period = true;
+      }
+    }
+
+    if (c == '.') {
+      advance();
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    advance();
+    var str digits = stop();
+
+    must(digits.len != 0);
+
+    if (digits.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::LengthOverflow);
+    }
+
+    if (has_period) {
+      return create_text_token(p, Token::Kind::Float, digits);
+    }
+
+    const usz max_u64_dec_length = 20;
+    if (digits.len > max_u64_dec_length) {
+      return Token(p, Token::Illegal::NumberOverflow);
+    }
+
+    if (digits.len == max_u64_dec_length) {
+      if (digits.ptr[0] > '1') {
+        return Token(p, Token::Illegal::NumberOverflow);
+      }
+      // TODO: more accurate overflow detection
+    }
+
+    const u64 n = strconv::unsafe_parse_dec(digits);
+    var Token tok = Token(p, n);
+    tok.kind = Token::Kind::Integer;
+    return tok;
+  }
+
+  method Token binary_number() noexcept {
+    const Pos p = pos;
+    advance();  // skip '0'
+    advance();  // skip 'b'
+    start();
+
+    while (!eof && text::is_binary_digit(c)) {
+      advance();
+    }
+
+    if (!eof && text::is_alphanum(c)) {
+      consume_word();
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    var str digits = stop();
+    if (digits.len == 0) {
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    if (digits.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::LengthOverflow);
+    }
+
+    if (digits.len > 64) {
+      return Token(p, Token::Illegal::NumberOverflow);
+    }
+
+    const u64 n = strconv::unsafe_parse_bin(digits);
+    var Token tok = Token(p, n);
+    tok.kind = Token::Kind::Integer;
+    return tok;
+  }
+
+  method Token octal_number() noexcept {
+    const Pos p = pos;
+    advance();  // skip '0'
+    advance();  // skip 'o
+    start();
+
+    while (!eof && text::is_octal_digit(c)) {
+      advance();
+    }
+
+    if (!eof && text::is_alphanum(c)) {
+      consume_word();
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    var str digits = stop();
+    if (digits.len == 0) {
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    if (digits.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::LengthOverflow);
+    }
+
+    if (digits.len > 21) {
+      return Token(p, Token::Illegal::NumberOverflow);
+    }
+
+    const u64 n = strconv::unsafe_parse_oct(digits);
+    var Token tok = Token(p, n);
+    tok.kind = Token::Kind::Integer;
+    return tok;
+  }
+
+  method Token hexadecimal_number() noexcept {
+    const Pos p = pos;
+    advance();  // skip '0'
+    advance();  // skip 'x
+    start();
+
+    while (!eof && text::is_hexadecimal_digit(c)) {
+      advance();
+    }
+
+    if (!eof && text::is_alphanum(c)) {
+      consume_word();
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    var str digits = stop();
+    if (digits.len == 0) {
+      return Token(p, Token::Illegal::MalformedNumber);
+    }
+
+    if (digits.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::LengthOverflow);
+    }
+
+    if (digits.len > 16) {
+      return Token(p, Token::Illegal::NumberOverflow);
+    }
+
+    const u64 n = strconv::unsafe_parse_hex(digits);
+    var Token tok = Token(p, n);
+    tok.kind = Token::Kind::Integer;
+    return tok;
   }
 
   method Token string() noexcept {
@@ -570,10 +839,37 @@ struct Lexer {
     advance();  // skip '"'
 
     if (ss.len > max_token_byte_length) {
-      return Token(p, Token::Illegal::StringOverflow);
+      return Token(p, Token::Illegal::LengthOverflow);
     }
 
     return create_text_token(p, Token::Kind::String, ss);
+  }
+
+  method Token charlit() noexcept {
+    const Pos p = pos;
+    advance();  // skip '\''
+    start();
+
+    while (!eof && c != '\n' && c != '\'') {
+      if (c == '\\' && next == '\'') {
+        // skip escape sequence
+        advance();
+      }
+      advance();
+    }
+
+    if (c != '\'') {
+      return Token(p, Token::Illegal::MalformedCharlit);
+    }
+
+    var str ss = stop();
+    advance();  // skip '\''
+
+    if (ss.len > max_token_byte_length) {
+      return Token(p, Token::Illegal::LengthOverflow);
+    }
+
+    return create_text_token(p, Token::Kind::Charlit, ss);
   }
 
   method Token directive() noexcept {
@@ -584,25 +880,120 @@ struct Lexer {
     var str w = stop();
 
     if (w.len > max_token_byte_length) {
-      return Token(p, Token::Illegal::DirectiveOverflow);
+      return Token(p, Token::Illegal::LengthOverflow);
     }
 
     // TODO: directive detection
     return Token(p, Token::Illegal::UnrecognizedDirective);
   }
 
+  method Token scan_one_byte_token(Token::Other subkind) noexcept {
+    const Pos p = pos;
+    advance();
+    return Token(p, subkind);
+  }
+
+  method Token scan_two_byte_token(Token::Other subkind) noexcept {
+    const Pos p = pos;
+    advance();
+    advance();
+    return Token(p, subkind);
+  }
+
+  method Token scan_illegal_byte_sequence() noexcept {
+    const Pos p = pos;
+    advance();
+    return Token(p, Token::Illegal::NonPrintableByte);
+  }
+
   method Token other() noexcept {
     switch (c) {
       case '{': {
-        break;
+        return scan_one_byte_token(Token::Other::LCurly);
+      }
+      case '}': {
+        return scan_one_byte_token(Token::Other::RCurly);
+      }
+      case '(': {
+        return scan_one_byte_token(Token::Other::LParen);
+      }
+      case ')': {
+        return scan_one_byte_token(Token::Other::RParen);
+      }
+      case '[': {
+        return scan_one_byte_token(Token::Other::LSquare);
+      }
+      case ']': {
+        return scan_one_byte_token(Token::Other::RSquare);
+      }
+      case '<': {
+        return scan_one_byte_token(Token::Other::LAngle);
+      }
+      case '>': {
+        return scan_one_byte_token(Token::Other::RAngle);
+      }
+      case '*': {
+        return scan_one_byte_token(Token::Other::Asterisk);
+      }
+      case '+': {
+        return scan_one_byte_token(Token::Other::Plus);
+      }
+      case '-': {
+        return scan_one_byte_token(Token::Other::Minus);
+      }
+      case '/': {
+        return scan_one_byte_token(Token::Other::Slash);
+      }
+      case '%': {
+        return scan_one_byte_token(Token::Other::Percent);
+      }
+      case '=': {
+        return scan_one_byte_token(Token::Other::Assign);
+      }
+      case '.': {
+        return scan_one_byte_token(Token::Other::Period);
+      }
+      case ';': {
+        return scan_one_byte_token(Token::Other::Semicolon);
+      }
+      case ',': {
+        return scan_one_byte_token(Token::Other::Comma);
+      }
+      case ':': {
+        return scan_one_byte_token(Token::Other::Colon);
       }
 
       default: {
-        break;
+        return scan_illegal_byte_sequence();
       }
     }
   }
 };
+
+fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer& lx) noexcept {
+  var u8 write_buf[1 << 13];
+  var fs::BufFileWriter w =
+      fs::BufFileWriter(fd, mc(write_buf, sizeof(write_buf)));
+
+  var u8 b[64] dirty;
+  var mc buf = mc(b, sizeof(b));
+  var Token tok dirty;
+  do {
+    tok = lx.lex();
+
+    // keep 1 byte in order to guarantee enough space for
+    // line feed character at the end
+    const usz n = tok.fmt(buf.slice_down(1));
+    buf.slice_from(n).unsafe_write('\n');
+
+    var fs::WriteResult r = w.write(buf.slice_to(n + 1));
+    if (r.is_err()) {
+      return r;
+    }
+  } while (tok.kind != Token::Kind::EOF);
+
+  return w.flush();
+}
 
 fn void lex_file(cstr filename) noexcept {}
 

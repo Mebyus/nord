@@ -34,13 +34,11 @@ else
 	CFLAGS = ${GENFLAGS} ${WARNINGS} -Werror -pipe -std=c++${CSTANDARD} -O${OPTIMIZATION}
 endif
 
-BIN_PATH = ${BIN_DIR}/${BIN_NAME}
-
 .PHONY: default
 default: build
 
 .PHONY: build
-build: dirs ${BIN_PATH}
+build: dirs ${BIN_DIR}/nord ${BIN_DIR}/mimic
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -51,12 +49,19 @@ ${BIN_DIR}:
 ${CACHE_DIR}:
 	mkdir -p ${CACHE_DIR}
 
-${BIN_PATH}: ${CACHE_DIR}/main.o
-	${CC} -rdynamic -o $@ $^
+${BIN_DIR}/nord: ${CACHE_DIR}/main.o
+	${CC} -o $@ $^
+
+${BIN_DIR}/mimic: ${CACHE_DIR}/mimic.o
+	${CC} -o $@ $^
 
 ${CACHE_DIR}/main.o: src/main.cpp makefile
 	${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/main.d
+
+${CACHE_DIR}/mimic.o: src/mimic.cpp makefile
+	${CC} ${CPPFLAGS} ${CACHE_DIR}/mimic.d ${CFLAGS} -o $@ -c $<
+-include ${CACHE_DIR}/mimic.d
 
 .PHONY: clean
 clean:
