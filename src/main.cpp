@@ -591,6 +591,14 @@ struct TextLine {
     tokenize(&token_kind_map);
   }
 
+  method void remove(usz i) noexcept {
+    if (changed.is_nil()) {
+      changed = DynBytesBuffer(data);
+    }
+    changed.remove(i);
+    tokenize(&token_kind_map);
+  }
+
   method void tokenize(FlatMap* map) noexcept {
     tokenized = true;
     tokens.reset();
@@ -873,6 +881,13 @@ struct Editor {
     redraw_line_at_cursor();
   }
 
+  method void delete_at_cursor() noexcept {
+    const usz line_index = vy + cy;
+    const usz remove_index = cx;
+    lines.buf.ptr[line_index].remove(remove_index);
+    redraw_line_at_cursor();
+  }
+
   method void move_viewport_up() noexcept {
     if (vy == 0) {
       return;
@@ -1066,7 +1081,7 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
       exit(0);
     }
 
-    if (text::is_alphanum(k.c)) {
+    if (text::is_printable_ascii_character(k.c)) {
       e.insert_at_cursor(k.c);
       return;
     }
@@ -1101,7 +1116,8 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
     }
 
     case Editor::Seq::DELETE: {
-      break;
+      e.delete_at_cursor();
+      return;
     }
 
     case Editor::Seq::UNKNOWN: {

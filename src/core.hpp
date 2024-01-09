@@ -810,7 +810,7 @@ struct bb {
     len += sizeof(f32);
   }
 
-  // Insert single byte at specified index. All bytes with
+  // Insert single byte at specified index. All active bytes with
   // greater or equal indices will be shifted by one position
   // to the right. This operation increases buffer length by 1
   //
@@ -832,6 +832,30 @@ struct bb {
     move(ptr + i, ptr + i + 1, len - i);
     len += 1;
     ptr[i] = x;
+  }
+
+  // Remove single byte at specified index. All active bytes with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i < len <= cap
+  // (hence length must be at least 1)
+  //
+  // In the special case of i == len - 1 single byte will be popped
+  // from the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_remove(usz i) noexcept {
+    if (i == len - 1) {
+      len -= 1;
+      return;
+    }
+
+    move(ptr + i + 1, ptr + i, len - i - 1);
+    len -= 1;
   }
 
   method usz fmt_dec(u8 x) noexcept {
@@ -1454,6 +1478,15 @@ struct DynBytesBuffer {
     grow(n);
 
     buf.unsafe_insert(i, x);
+  }
+
+  // Remove single byte at specified index. All active bytes with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  method void remove(usz i) noexcept {
+    must(i < buf.len);
+
+    buf.unsafe_remove(i);
   }
 
   method void write(u8 x) noexcept {
@@ -2121,6 +2154,10 @@ fn inline bool is_binary_digit(rune r) noexcept {
   return r == '0' || r == '1';
 }
 
+fn inline bool is_printable_ascii_character(rune r) noexcept {
+  return 0x20 <= r && r <= 0x7E;
+}
+
 }  // namespace text
 
 namespace bits {
@@ -2426,6 +2463,53 @@ fn FlatMap<T> fit_into_flat_map(
   m.free();
   return FlatMap<T>();
 }
+
+template <typename T>
+struct CircularBuffer {
+  // Pointer to buffer starting position
+  T* ptr;
+
+  // Buffer capacity i.e. maximum number of elements
+  // it can hold
+  usz cap;
+
+  // Number of elements currently stored inside buffer
+  usz len;
+
+  // Tip position. Next added element will be placed
+  // inside with this offset
+  usz pos;
+
+  method void append(T elem) noexcept {
+    ptr[pos] = elem;
+
+    if (pos == cap) {
+      pos = 0;
+    } else {
+      pos += 1;
+    }
+
+    if (len == cap) {
+      return;
+    }
+
+    len += 1;
+  }
+
+  method T pop() noexcept {
+    must(len != 0);
+
+    if (len <= pos) {
+      const usz i = pos - len;
+      len -= 1;
+      return ptr[i];
+    }
+
+    const usz i = cap - len + pos;
+    len -= 1;
+    return ptr[i];
+  }
+};
 
 }  // namespace container
 

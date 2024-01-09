@@ -113,3 +113,12 @@ fn WriteResult write(FileDescriptor fd, mc c) noexcept {
 }
 
 }  // namespace fs
+
+extern "C" {
+
+fn i32 coven_linux_syscall_open(u8* s, u32 flags1, u32 flags2) noexcept;
+
+fn i32 coven_linux_syscall_read() noexcept;
+}
+
+namespace os::linux {}  // namespace os::linux
