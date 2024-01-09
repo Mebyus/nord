@@ -100,9 +100,16 @@ fn inline void swap(T& a, T& b) noexcept {
 
 // Copies n bytes of memory from src to dst
 //
+// Do not use for overlapping memory regions
+//
 // Implementation is platform-specific and will likely wrap
 // memory copy system call
 fn void copy(u8* src, u8* dst, usz n) noexcept;
+
+// Copies n bytes of memory from src to dst
+//
+// Guarantees correct behaviour for overlapping memory regions
+fn void move(u8* src, u8* dst, usz n) noexcept;
 
 // Small object that holds information about non-fatal error
 struct error {
@@ -654,6 +661,34 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   return l;
 }
 
+namespace fmt {
+
+fn inline u8 number_to_hex_digit(u8 x) noexcept {
+  if (x <= 9) {
+    return x + cast(u8, '0');
+  }
+  return x - 0xA + cast(u8, 'A');
+}
+
+// Formats a given u8 integer as a hexadecimal number in
+// exactly two digits. Memory chunk must be at least 2 bytes
+// long
+fn void unsafe_byte(mc c, u8 x) noexcept {
+  const u8 d0 = number_to_hex_digit(x & 0xF);
+  const u8 d1 = number_to_hex_digit(x >> 4);
+  c.ptr[0] = d1;
+  c.ptr[1] = d0;
+}
+
+// Memory chunk must be at least 4 bytes long
+fn void unsafe_hex_prefix_byte(mc c, u8 x) noexcept {
+  c.ptr[0] = '0';
+  c.ptr[1] = 'x';
+  unsafe_byte(c.slice_from(2), x);
+}
+
+}  // namespace fmt
+
 // Two Memory Chunks are considered equal if they have
 // identical length and bytes content
 fn bool compare_equal(mc a, mc b) noexcept {
@@ -773,6 +808,30 @@ struct bb {
     var f32* p = cast(f32*, tip());
     *p = x;
     len += sizeof(f32);
+  }
+
+  // Insert single byte at specified index. All bytes with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i <= len < cap
+  //
+  // In the special case of i == len new byte will be appended
+  // at the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_insert(usz i, u8 x) noexcept {
+    if (i == len) {
+      unsafe_write(x);
+      return;
+    }
+
+    move(ptr + i, ptr + i + 1, len - i);
+    len += 1;
+    ptr[i] = x;
   }
 
   method usz fmt_dec(u8 x) noexcept {
@@ -1329,12 +1388,23 @@ struct DynBytesBuffer {
 
   let DynBytesBuffer(usz n) noexcept : buf(bb()) { init(n); }
 
+  // Allocates a dynamic copy of a given memory chunk
+  let DynBytesBuffer(mc c) noexcept : buf(bb()) {
+    if (c.is_nil()) {
+      return;
+    }
+    init(c.len);
+    buf.unsafe_write(c);
+  }
+
   method void init(usz n) noexcept {
     if (n == 0) {
       return;
     }
     buf = bb(mem::alloc(n));
   }
+
+  method bool is_nil() noexcept { return buf.is_nil(); }
 
   // Increase buffer capacity by at least n bytes
   method void grow(usz n) noexcept {
@@ -1367,6 +1437,23 @@ struct DynBytesBuffer {
     grow(n);
 
     buf.unsafe_write(c);
+  }
+
+  // Insert single byte at specified index. All bytes with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  method void insert(usz i, u8 x) noexcept {
+    must(i <= buf.len);
+
+    if (buf.rem() >= 1) {
+      buf.unsafe_insert(i, x);
+      return;
+    }
+
+    const usz n = determine_bytes_grow_amount(buf.cap, 1);
+    grow(n);
+
+    buf.unsafe_insert(i, x);
   }
 
   method void write(u8 x) noexcept {

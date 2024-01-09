@@ -38,7 +38,7 @@ endif
 default: build
 
 .PHONY: build
-build: dirs ${BIN_DIR}/nord ${BIN_DIR}/mimic
+build: dirs ${BIN_DIR}/nord ${BIN_DIR}/ins # ${BIN_DIR}/mimic
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -55,6 +55,9 @@ ${BIN_DIR}/nord: ${CACHE_DIR}/main.o
 ${BIN_DIR}/mimic: ${CACHE_DIR}/mimic.o
 	${CC} -o $@ $^
 
+${BIN_DIR}/ins: ${CACHE_DIR}/input_sequence_inspect.o
+	${CC} -o $@ $^
+
 ${CACHE_DIR}/main.o: src/main.cpp makefile
 	${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/main.d
@@ -62,6 +65,10 @@ ${CACHE_DIR}/main.o: src/main.cpp makefile
 ${CACHE_DIR}/mimic.o: src/mimic.cpp makefile
 	${CC} ${CPPFLAGS} ${CACHE_DIR}/mimic.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/mimic.d
+
+${CACHE_DIR}/input_sequence_inspect.o: src/input_sequence_inspect.cpp makefile
+	${CC} ${CPPFLAGS} ${CACHE_DIR}/input_sequence_inspect.d ${CFLAGS} -o $@ -c $<
+-include ${CACHE_DIR}/input_sequence_inspect.d
 
 .PHONY: clean
 clean:

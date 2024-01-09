@@ -15,80 +15,6 @@
 
 #include "core_linux.cpp"
 
-fn void copy(u8* src, u8* dst, usz n) noexcept {
-  must(n != 0);
-  must(src != dst);
-
-  memcpy(dst, src, n);
-}
-
-method void mc::clear() noexcept {
-  if (len <= 16) {
-    for (usz i = 0; i < len; i += 1) {
-      ptr[i] = 0;
-    }
-    return;
-  }
-
-  memset(ptr, 0, len);
-}
-
-fn void fd_write(usz fd, mc c) noexcept {
-  var isz n = write(cast(i32, fd), c.ptr, c.len);
-  if (n < 0) {
-    // TODO: add error handling
-    return;
-  }
-}
-
-fn void stdout_write(mc c) noexcept {
-  const i32 stdout_fd = 1;
-  fd_write(stdout_fd, c);
-}
-
-fn void stderr_write(mc c) noexcept {
-  const i32 stderr_fd = 2;
-  fd_write(stderr_fd, c);
-}
-
-fn internal void fd_write_all(i32 fd, mc c) noexcept {
-  var u8* ptr = c.ptr;
-  var usz len = c.len;
-  while (len > 0) {
-    var isz n = write(fd, ptr, len);
-    if (n < 0) {
-      // TODO: add error handling
-      return;
-    }
-
-    len -= cast(usz, n);
-    ptr += n;
-  }
-}
-
-// Returns number of bytes read from file descriptor
-fn internal usz fd_read_all(i32 fd, mc c) noexcept {
-  var bb buf = bb(c);
-  while (!buf.is_full()) {
-    var isz n = read(fd, buf.tip(), buf.rem());
-    if (n <= 0) {
-      return buf.len;
-    }
-    buf.len += cast(usz, n);
-  }
-  return buf.len;
-}
-
-fn void stdout_write_all(mc c) noexcept {
-  const i32 stdout_fd = 1;
-  fd_write_all(stdout_fd, c);
-}
-
-fn void stderr_write_all(mc c) noexcept {
-  const i32 stderr_fd = 2;
-  fd_write_all(stderr_fd, c);
-}
-
 fn FileReadResult read_file(cstr filename) noexcept {
   var dirty struct stat s;
   var i32 rcode = stat(cast(char*, filename.ptr), &s);
@@ -245,6 +171,10 @@ struct TerminalOutputBuffer {
 
     // write prepared command to buffer
     write(buf.head());
+  }
+
+  method void clear_line_at_cursor() noexcept {
+    write(macro_static_str("\x1b[2K"));
   }
 
   method void set_text_color(Color color) noexcept {
@@ -615,17 +545,7 @@ var internal FlatMap token_kind_map = FlatMap(256, 0xFF, FLAT_MAP_SEED);
 
 #include "lexer.cpp"
 
-struct TextLine {
-  DynBuffer<Token> tokens;
-
-  // bytes that constitutes a line of text, not including
-  // trailing newline characters
-  mc data;
-
-  let TextLine(str text) noexcept : tokens(DynBuffer<Token>()), data(text) {}
-};
-
-fn internal DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
+fn DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
   if (line.is_nil()) {
     return DynBuffer<Token>();
   }
@@ -641,6 +561,53 @@ fn internal DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
 
   return buf;
 }
+
+struct TextLine {
+  DynBuffer<Token> tokens;
+
+  DynBytesBuffer changed;
+
+  // bytes that constitutes a line of text, not including
+  // trailing newline characters
+  mc data;
+
+  bool tokenized;
+
+  let TextLine(str text) noexcept
+      : tokens(DynBuffer<Token>()), data(text), tokenized(false) {}
+
+  method str content() noexcept {
+    if (!changed.is_nil()) {
+      return changed.head();
+    }
+    return data;
+  }
+
+  method void insert(usz i, u8 x) noexcept {
+    if (changed.is_nil()) {
+      changed = DynBytesBuffer(data);
+    }
+    changed.insert(i, x);
+    tokenize(&token_kind_map);
+  }
+
+  method void tokenize(FlatMap* map) noexcept {
+    tokenized = true;
+    tokens.reset();
+
+    var str s = content();
+    if (s.is_nil()) {
+      return;
+    }
+
+    var nord::Lexer lx = nord::Lexer(map, s);
+    var Token tok = lx.lex();
+    while (tok.kind != Token::Kind::EOF) {
+      tokens.append(tok);
+      tok = lx.lex();
+    }
+  }
+};
 
 fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
   const usz avg_bytes_per_line = 25;  // empirical constant
@@ -867,13 +834,11 @@ struct Editor {
   method void draw_line(usz k, u32 max_width) noexcept {
     nop_use(max_width);
 
-    var TextLine line = lines.buf.ptr[k];
-
-    if (line.tokens.buf.is_nil()) {
-      // cache tokenization result for this line
-      line.tokens = tokenize_line(&token_kind_map, line.data);
-      lines.buf.ptr[k] = line;
+    if (!lines.buf.ptr[k].tokenized) {
+      lines.buf.ptr[k].tokenize(&token_kind_map);
     }
+
+    var TextLine line = lines.buf.ptr[k];
 
     for (usz i = 0; i < line.tokens.buf.len; i += 1) {
       var Token tok = line.tokens.buf.ptr[i];
@@ -885,6 +850,27 @@ struct Editor {
         term_buf.write(tok.lit);
       }
     }
+  }
+
+  method void redraw_line_at_cursor() noexcept {
+    term_buf.hide_cursor();
+    term_buf.clear_line_at_cursor();
+    term_buf.change_cursor_position(0, cy);
+    draw_line(vy + cy, 100);
+    term_buf.change_cursor_position(cx, cy);
+    term_buf.show_cursor();
+    term_buf.flush();
+  }
+
+  method void insert_at_cursor(u8 x) noexcept {
+    const usz line_index = vy + cy;
+    const usz insert_index = cx;
+    lines.buf.ptr[line_index].insert(insert_index, x);
+
+    // move cursor to next column after inserting a character
+    cx += 1;
+
+    redraw_line_at_cursor();
   }
 
   method void move_viewport_up() noexcept {
@@ -1079,6 +1065,11 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
       e.term_buf.flush();
       exit(0);
     }
+
+    if (text::is_alphanum(k.c)) {
+      e.insert_at_cursor(k.c);
+      return;
+    }
     return;
   }
 
@@ -1184,7 +1175,6 @@ fn FlatMap fit_into_flat_map(usz cap,
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-
   // var str text = macro_static_str("\"hello\"  \t world \n 12.3");
   // // var str text = macro_static_str("}}");
   // var nord::Lexer lx = nord::Lexer(nil, text);
