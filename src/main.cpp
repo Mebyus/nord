@@ -15,46 +15,6 @@
 
 #include "core_linux.cpp"
 
-fn FileReadResult read_file(cstr filename) noexcept {
-  var dirty struct stat s;
-  var i32 rcode = stat(cast(char*, filename.ptr), &s);
-  if (rcode < 0) {
-    if (errno == EEXIST) {
-      return FileReadResult(FileReadResult::Code::AlreadyExists);
-    }
-    return FileReadResult(FileReadResult::Code::Error);
-  }
-
-  const usz size = s.st_size;
-  if (size == 0) {
-    // File is empty, nothing to read
-    return FileReadResult(mc());
-  }
-
-  const i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
-  if (fd < 0) {
-    if (errno == EEXIST) {
-      return FileReadResult(FileReadResult::Code::AlreadyExists);
-    }
-    return FileReadResult(FileReadResult::Code::Error);
-  }
-
-  var mc data = mem::alloc(size);
-  if (data.is_nil()) {
-    close(fd);
-    return FileReadResult(FileReadResult::Code::Error);
-  }
-
-  const usz n = fd_read_all(fd, data);
-  close(fd);
-  if (n == 0) {
-    mem::free(data);
-    return FileReadResult(FileReadResult::Code::Error);
-  }
-
-  return FileReadResult(data.slice_to(n));
-}
-
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 var global struct termios original_terminal_state;
@@ -749,7 +709,7 @@ struct Editor {
   }
 
   method void init(cstr filename) noexcept {
-    var FileReadResult result = read_file(filename);
+    var fs::FileReadResult result = fs::read_file(filename);
     if (result.is_err()) {
       // TODO: display error message
       return;
@@ -913,6 +873,20 @@ struct Editor {
     term_buf.flush();
   }
 
+  method void backspace_at_cursor() noexcept {
+    const usz line_index = vy + ty;
+    const usz remove_index = vx + tx - 1;
+    lines.buf.ptr[line_index].remove(remove_index);
+
+    // move cursor to previous column after backspacing a character
+    tx -= 1;
+
+    redraw_line_at_cursor();
+    update_cursor_position();
+    term_buf.show_cursor();
+    term_buf.flush();
+  }
+
   method void trim_cursor_position_by_line_length() {
     tx = min(tx, current_line_length());
   }
@@ -1066,7 +1040,10 @@ fn internal Editor::Key read_key_input() noexcept {
     break;
   }
 
-  if (c != '\x1b') {
+  if (c != 0x1B) {
+    if (c == 0x7F) {
+      return Editor::Key{.c = 0, .s = Editor::Seq::BACKSPACE};
+    }
     return Editor::Key{.c = c, .s = Editor::Seq::REGULAR};
   }
 
@@ -1177,6 +1154,7 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
     }
 
     case Editor::Seq::BACKSPACE: {
+      e.backspace_at_cursor();
       return;
     }
 

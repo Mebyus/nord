@@ -1752,28 +1752,6 @@ struct cstr {
 
 #define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
 
-struct FileReadResult {
-  enum struct Code : u8 {
-    Ok,
-
-    // Generic error, no specifics known
-    Error,
-
-    AlreadyExists,
-  };
-
-  mc data;
-
-  Code code;
-
-  let FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
-  let FileReadResult(Code c) noexcept : data(mc()), code(c) {}
-  let FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
-
-  method bool is_ok() noexcept { return code == Code::Ok; }
-  method bool is_err() noexcept { return code != Code::Ok; }
-};
-
 namespace fs {
 
 struct ReadResult {
@@ -1801,6 +1779,28 @@ struct ReadResult {
   method bool is_err() noexcept {
     return code != Code::Ok && code != Code::EOF;
   }
+};
+
+struct FileReadResult {
+  enum struct Code : u8 {
+    Ok,
+
+    // Generic error, no specifics known
+    Error,
+
+    AlreadyExists,
+  };
+
+  mc data;
+
+  Code code;
+
+  let FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
+  let FileReadResult(Code c) noexcept : data(mc()), code(c) {}
+  let FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
+
+  method bool is_ok() noexcept { return code == Code::Ok; }
+  method bool is_err() noexcept { return code != Code::Ok; }
 };
 
 struct WriteResult {

@@ -66,19 +66,6 @@ fn void fd_write_all(i32 fd, mc c) noexcept {
   }
 }
 
-// Returns number of bytes read from file descriptor
-fn usz fd_read_all(i32 fd, mc c) noexcept {
-  var bb buf = bb(c);
-  while (!buf.is_full()) {
-    var isz n = read(fd, buf.tip(), buf.rem());
-    if (n <= 0) {
-      return buf.len;
-    }
-    buf.len += cast(usz, n);
-  }
-  return buf.len;
-}
-
 fn void stdout_write_all(mc c) noexcept {
   const i32 stdout_fd = 1;
   fd_write_all(stdout_fd, c);
@@ -112,6 +99,46 @@ fn WriteResult write(FileDescriptor fd, mc c) noexcept {
   return WriteResult(cast(usz, n));
 }
 
+fn FileReadResult read_file(cstr filename) noexcept {
+  var dirty struct stat s;
+  var i32 rcode = stat(cast(char*, filename.ptr), &s);
+  if (rcode < 0) {
+    if (errno == EEXIST) {
+      return FileReadResult(FileReadResult::Code::AlreadyExists);
+    }
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  const usz size = s.st_size;
+  if (size == 0) {
+    // File is empty, nothing to read
+    return FileReadResult(mc());
+  }
+
+  const i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
+  if (fd < 0) {
+    if (errno == EEXIST) {
+      return FileReadResult(FileReadResult::Code::AlreadyExists);
+    }
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var mc data = mem::alloc(size);
+  if (data.is_nil()) {
+    close(fd);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var ReadResult rr = read_all(fd, data);
+  close(fd);
+  if (rr.is_err() || rr.n == 0) {
+    mem::free(data);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  return FileReadResult(data.slice_to(rr.n));
+}
+
 }  // namespace fs
 
 extern "C" {
@@ -119,6 +146,8 @@ extern "C" {
 fn i32 coven_linux_syscall_open(u8* s, u32 flags1, u32 flags2) noexcept;
 
 fn i32 coven_linux_syscall_read() noexcept;
+
+fn i32 coven_linux_syscall_close(i32 fd) noexcept;
 }
 
 namespace os::linux {}  // namespace os::linux

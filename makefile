@@ -38,7 +38,7 @@ endif
 default: build
 
 .PHONY: build
-build: dirs ${BIN_DIR}/nord ${BIN_DIR}/ins # ${BIN_DIR}/mimic
+build: dirs ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -50,25 +50,32 @@ ${CACHE_DIR}:
 	mkdir -p ${CACHE_DIR}
 
 ${BIN_DIR}/nord: ${CACHE_DIR}/main.o
-	${CC} -o $@ $^
+	@${CC} -o $@ $^
 
 ${BIN_DIR}/mimic: ${CACHE_DIR}/mimic.o
-	${CC} -o $@ $^
+	@${CC} -o $@ $^
 
 ${BIN_DIR}/ins: ${CACHE_DIR}/input_sequence_inspect.o
-	${CC} -o $@ $^
+	@${CC} -o $@ $^
+
+${BIN_DIR}/flatfit: ${CACHE_DIR}/flat_fit.o
+	@${CC} -o $@ $^
 
 ${CACHE_DIR}/main.o: src/main.cpp makefile
-	${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/main.d
 
 ${CACHE_DIR}/mimic.o: src/mimic.cpp makefile
-	${CC} ${CPPFLAGS} ${CACHE_DIR}/mimic.d ${CFLAGS} -o $@ -c $<
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/mimic.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/mimic.d
 
 ${CACHE_DIR}/input_sequence_inspect.o: src/input_sequence_inspect.cpp makefile
-	${CC} ${CPPFLAGS} ${CACHE_DIR}/input_sequence_inspect.d ${CFLAGS} -o $@ -c $<
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/input_sequence_inspect.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/input_sequence_inspect.d
+
+${CACHE_DIR}/flat_fit.o: src/flat_fit.cpp makefile
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/flat_fit.d ${CFLAGS} -o $@ -c $<
+-include ${CACHE_DIR}/flat_fit.d
 
 .PHONY: clean
 clean:
