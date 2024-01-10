@@ -49,11 +49,57 @@ fn internal void enter_raw_mode() noexcept {
 
 }  // namespace nord
 
+fn internal void fmt_input_into_buffer(bb& buf, mc input) {
+  if (input.len == 1 && text::is_printable_ascii_character(input.ptr[0])) {
+    const u8 x = input.ptr[0];
+
+    fmt::unsafe_hex_prefix_byte(buf.tail(), x);
+    buf.len += 4;
+
+    buf.write(macro_static_str("  =>  "));
+
+    fmt::unsafe_bin_byte(buf.tail(), x);
+    buf.len += 8;
+
+    buf.write(macro_static_str("  =>  "));
+
+    buf.fmt_dec(x);
+
+    buf.write(macro_static_str("  =>  '"));
+
+    buf.write(x);
+
+    buf.write(macro_static_str("'\r\n"));
+
+    return;
+  }
+
+  // TODO: unify code inside if and for loop
+
+  for (usz i = 0; i < input.len; i += 1) {
+    const u8 x = input.ptr[i];
+
+    fmt::unsafe_hex_prefix_byte(buf.tail(), x);
+    buf.len += 4;
+
+    buf.write(macro_static_str("  =>  "));
+
+    fmt::unsafe_bin_byte(buf.tail(), x);
+    buf.len += 8;
+
+    buf.write(macro_static_str("  =>  "));
+
+    buf.fmt_dec(x);
+
+    buf.write(macro_static_str("\r\n"));
+  }
+}
+
 fn i32 main() noexcept {
   nord::enter_raw_mode();
 
   var u8 input_buf[7];
-  var u8 output_buf[256];
+  var u8 output_buf[512];
   var mc ibuf = mc(input_buf, sizeof(input_buf));
   var bb buf = bb(output_buf, sizeof(output_buf));
 
@@ -79,20 +125,7 @@ fn i32 main() noexcept {
       buf.write(macro_static_str(" bytes"));
     }
     buf.write(macro_static_str("\r\n\r\n"));
-
-    for (usz i = 0; i < rr.n; i += 1) {
-      const u8 x = ibuf.ptr[i];
-
-      fmt::unsafe_hex_prefix_byte(buf.tail(), x);
-      buf.len += 4;
-
-      buf.write(macro_static_str("  =>  "));
-
-      buf.fmt_dec(x);
-
-      buf.write(macro_static_str("\r\n"));
-    }
-
+    fmt_input_into_buffer(buf, ibuf.slice_to(rr.n));
     buf.write(macro_static_str("\r\n-------\r\n"));
 
     fs::write_all(stdout_fd, buf.head());

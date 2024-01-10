@@ -620,37 +620,37 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   var dirty u8 digit;
   // digits are written from least to most significant bit
   while (i > l - 8) {
-    i += 1;
+    i -= 1;
     digit = x & 1;
     ptr[i] = decimal_digit_to_charcode(digit);
     x = x >> 1;
   }
 
-  i += 1;
+  i -= 1;
   ptr[i] = ' ';
 
   while (i > l - 17) {
-    i += 1;
+    i -= 1;
     digit = x & 1;
     ptr[i] = decimal_digit_to_charcode(digit);
     x = x >> 1;
   }
 
-  i += 1;
+  i -= 1;
   ptr[i] = ' ';
 
   while (i > l - 26) {
-    i += 1;
+    i -= 1;
     digit = x & 1;
     ptr[i] = decimal_digit_to_charcode(digit);
     x = x >> 1;
   }
 
-  i += 1;
+  i -= 1;
   ptr[i] = ' ';
 
   while (i > 1) {
-    i += 1;
+    i -= 1;
     digit = x & 1;
     ptr[i] = decimal_digit_to_charcode(digit);
     x = x >> 1;
@@ -673,7 +673,7 @@ fn inline u8 number_to_hex_digit(u8 x) noexcept {
 // Formats a given u8 integer as a hexadecimal number in
 // exactly two digits. Memory chunk must be at least 2 bytes
 // long
-fn void unsafe_byte(mc c, u8 x) noexcept {
+fn void unsafe_hex_byte(mc c, u8 x) noexcept {
   const u8 d0 = number_to_hex_digit(x & 0xF);
   const u8 d1 = number_to_hex_digit(x >> 4);
   c.ptr[0] = d1;
@@ -684,7 +684,21 @@ fn void unsafe_byte(mc c, u8 x) noexcept {
 fn void unsafe_hex_prefix_byte(mc c, u8 x) noexcept {
   c.ptr[0] = '0';
   c.ptr[1] = 'x';
-  unsafe_byte(c.slice_from(2), x);
+  unsafe_hex_byte(c.slice_from(2), x);
+}
+
+// Formats a given u8 integer as a binary number in
+// exactly eight digits. Memory chunk must be at least 8 bytes
+// long
+fn void unsafe_bin_byte(mc c, u8 x) noexcept {
+  var usz i = 8;
+  // digits are written from least to most significant bit
+  do {
+    i -= 1;
+    const u8 digit = x & 1;
+    c.ptr[i] = decimal_digit_to_charcode(digit);
+    x = x >> 1;
+  } while (i != 0);
 }
 
 }  // namespace fmt
