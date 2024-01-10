@@ -1701,7 +1701,7 @@ struct DynBuffer {
 
   method usz len() noexcept { return buf.len; }
 
-  method mc head() noexcept { return buf.head(); }
+  method chunk<T> head() noexcept { return buf.head(); }
 };
 
 // C String
