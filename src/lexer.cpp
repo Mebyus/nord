@@ -171,7 +171,7 @@ struct Lexer {
 
     advance();
 
-    while (!eof && text::is_hexadecimal_digit(c)) {
+    while (!eof && text::is_alphanum(c)) {
       advance();
     }
 

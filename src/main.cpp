@@ -282,14 +282,15 @@ struct Token {
   }
 };
 
-internal const Color default_color = Color(0xAB, 0xB2, 0xBF);
+internal const Color default_color = Color(0xBB, 0xB2, 0xBF);
+internal const Color gutter_color = Color(0x64, 0x55, 0x4E);
 
 internal const Color style[] = {
     default_color,            // EMPTY
     default_color,            // EOF
     Color(0x56, 0xB6, 0xC2),  // DIRECTIVE
     Color(0xE0, 0x6C, 0x75),  // KEYWORD_GROUP_1
-    default_color,            // KEYWORD_GROUP_2
+    Color(0xE4, 0x8A, 0x38),  // KEYWORD_GROUP_2
     Color(0x61, 0xAF, 0xEF),  // BUILTIN
     default_color,            // IDENTIFIER
     Color(0xE5, 0xC0, 0x7B),  // STRING
@@ -671,20 +672,6 @@ fn internal DynBuffer<TextLine> split_lines(mc text) noexcept {
   return buf;
 }
 
-fn internal mc format_gutter(bb buf, usz width, u32 line_number) noexcept {
-  var usz n = buf.fmt_dec(line_number);
-
-  for (usz i = 0; i < width - n - 3; i += 1) {
-    buf.write(' ');
-  }
-
-  buf.write(' ');
-  buf.write('|');
-  buf.write(' ');
-
-  return buf.head();
-}
-
 struct Editor {
   // type of input sequence
   enum struct Seq : u8 {
@@ -705,6 +692,7 @@ struct Editor {
     PAGE_DOWN,
 
     DELETE,
+    BACKSPACE,
   };
 
   struct Key {
@@ -726,12 +714,23 @@ struct Editor {
   u32 rows_num;
   u32 cols_num;
 
+  // number of rows and columns in text viewport
+  u32 vrows;
+  u32 vcols;
+
   // position of text viewport top-left corner
   u32 vx;
   u32 vy;
 
+  // cursor position inside text viewport
+  u32 tx;
+  u32 ty;
+
   // number of rows in jump when page up/down is pressed
   u32 viewport_page_stride;
+
+  // value at current viewport position
+  u32 gutter_width;
 
   Color text_color;
 
@@ -767,8 +766,8 @@ struct Editor {
     term_buf.flush();
     clear_window();
     draw_text();
-    term_buf.show_cursor();
     update_cursor_position();
+    term_buf.show_cursor();
     term_buf.flush();
   }
 
@@ -787,6 +786,9 @@ struct Editor {
     vx = 0;
     vy = 0;
 
+    tx = 0;
+    ty = 0;
+
     full_viewport_upd_flag = false;
 
     enter_raw_mode();
@@ -798,21 +800,14 @@ struct Editor {
     struct winsize ws = get_viewport_size();
     rows_num = cast(u32, ws.ws_row);
     cols_num = cast(u32, ws.ws_col);
+    vrows = rows_num - 1;
+    vcols = cols_num - 6;
 
     viewport_page_stride = (2 * rows_num) / 3;
   }
 
   method void draw_text() noexcept {
-    var dirty u8 gutter_buf[16];
-    var bb buf = bb(gutter_buf, 16);
-
-    var u32 max_line_number = min(vy + rows_num, cast(u32, lines.len()));
-    var usz line_number_width = buf.fmt_dec(max_line_number);
-    buf.reset();
-
-    // gutter has format "xxxx | "
-    // min width for line number is 4
-    var usz gutter_width = max(cast(usz, 4 + 3), line_number_width + 3);
+    update_gutter_width();
 
     // y coordinate inside viewport
     var u32 y = 0;
@@ -821,9 +816,9 @@ struct Editor {
 
     // line index which is drawn at current y coordinate
     var usz j = vy;
-    while (y < rows_num - 1 && j < lines.len()) {
-      mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
-      term_buf.write(line_gutter);
+    while (y < vrows - 1 && j < lines.len()) {
+      draw_gutter(cast(u32, j + 1));
+      change_text_color(default_color);
       draw_line(j, max_text_width);
       term_buf.nl();
 
@@ -832,11 +827,35 @@ struct Editor {
     }
 
     // draw last line without newline at the end
-    if (y == rows_num - 1 && j < lines.len()) {
-      mc line_gutter = format_gutter(buf, gutter_width, cast(u32, j + 1));
-      term_buf.write(line_gutter);
+    if (y == vrows - 1 && j < lines.len()) {
+      draw_gutter(cast(u32, j + 1));
+      term_buf.set_text_color(default_color);
       draw_line(j, max_text_width);
     }
+  }
+
+  method void update_gutter_width() noexcept {
+    var u8 gutter_buf[16] dirty;
+    var bb buf = bb(gutter_buf, sizeof(gutter_buf));
+
+    const u32 max_line_number = min(vy + rows_num, cast(u32, lines.len()));
+    const usz line_number_width = buf.unsafe_fmt_dec(max_line_number);
+
+    // gutter has format "xxxx  " with number aligned to right
+    // min width for line number is 4
+    gutter_width = cast(u32, max(cast(usz, 4 + 2), line_number_width + 2));
+    vcols = cols_num - gutter_width;
+  }
+
+  method void draw_gutter(u32 line_number) noexcept {
+    change_text_color(gutter_color);
+
+    var u8 gutter_buf[16] dirty;
+    var bb buf = bb(gutter_buf, sizeof(gutter_buf));
+
+    var usz n = buf.fmt_dec(line_number);
+    buf.write_repeat(gutter_width - n, ' ');
+    term_buf.write(buf.head());
   }
 
   method void draw_line(usz k, u32 max_width) noexcept {
@@ -864,28 +883,53 @@ struct Editor {
     term_buf.hide_cursor();
     term_buf.clear_line_at_cursor();
     term_buf.change_cursor_position(0, cy);
-    draw_line(vy + cy, 100);
-    term_buf.change_cursor_position(cx, cy);
+
+    const u32 line_index = vy + cy;
+    draw_gutter(line_index + 1);
+    draw_line(line_index, 100);
+  }
+
+  method void insert_at_cursor(u8 x) noexcept {
+    const usz line_index = vy + ty;
+    const usz insert_index = vx + tx;
+    lines.buf.ptr[line_index].insert(insert_index, x);
+
+    // move cursor to next column after inserting a character
+    tx += 1;
+
+    redraw_line_at_cursor();
+    update_cursor_position();
     term_buf.show_cursor();
     term_buf.flush();
   }
 
-  method void insert_at_cursor(u8 x) noexcept {
-    const usz line_index = vy + cy;
-    const usz insert_index = cx;
-    lines.buf.ptr[line_index].insert(insert_index, x);
-
-    // move cursor to next column after inserting a character
-    cx += 1;
-
-    redraw_line_at_cursor();
-  }
-
   method void delete_at_cursor() noexcept {
-    const usz line_index = vy + cy;
-    const usz remove_index = cx;
+    const usz line_index = vy + ty;
+    const usz remove_index = vx + tx;
     lines.buf.ptr[line_index].remove(remove_index);
     redraw_line_at_cursor();
+    sync_cursor_position();
+    term_buf.show_cursor();
+    term_buf.flush();
+  }
+
+  method void trim_cursor_position_by_line_length() {
+    tx = min(tx, current_line_length());
+  }
+
+  method u32 current_line_length() noexcept {
+    const u32 line_index = vy + ty;
+    return cast(u32, lines.buf.ptr[line_index].content().len);
+  }
+
+  method void move_cursor_up_line_end() noexcept {
+    move_cursor_up();
+    tx = current_line_length();
+  }
+
+  method void move_cursor_down_line_start() noexcept {
+    move_cursor_down();
+    tx = 0;
   }
 
   method void move_viewport_up() noexcept {
@@ -905,38 +949,43 @@ struct Editor {
   }
 
   method void move_cursor_right() noexcept {
-    if (cx >= cols_num - 1) {
+    if (tx >= vcols - 1) {
       return;
     }
-    cx += 1;
+    if (tx >= current_line_length()) {
+      move_cursor_down_line_start();
+      return;
+    }
+    tx += 1;
   }
 
   method void move_cursor_left() noexcept {
-    if (cx == 0) {
+    if (tx == 0) {
+      move_cursor_up_line_end();
       return;
     }
-    cx -= 1;
+    tx -= 1;
   }
 
   method void move_cursor_up() noexcept {
-    if (cy == 0) {
+    if (ty == 0) {
       move_viewport_up();
       return;
     }
-    cy -= 1;
+    ty -= 1;
   }
 
   method void move_cursor_down() noexcept {
-    if (cy >= rows_num - 1) {
+    if (ty >= vrows - 1) {
       move_viewport_down();
       return;
     }
-    cy += 1;
+    ty += 1;
   }
 
-  method void move_cursor_top() noexcept { cy = 0; }
+  method void move_cursor_top() noexcept { ty = 0; }
 
-  method void move_cursor_bot() noexcept { cy = rows_num - 1; }
+  method void move_cursor_bot() noexcept { ty = vrows - 1; }
 
   method void jump_viewport_up() noexcept {
     if (vy == 0) {
@@ -965,6 +1014,13 @@ struct Editor {
   }
 
   method void update_cursor_position() noexcept {
+    trim_cursor_position_by_line_length();
+    cx = gutter_width + tx;
+    cy = ty;
+    sync_cursor_position();
+  }
+
+  method void sync_cursor_position() noexcept {
     term_buf.change_cursor_position(cx, cy);
   }
 
@@ -1117,6 +1173,10 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 
     case Editor::Seq::DELETE: {
       e.delete_at_cursor();
+      return;
+    }
+
+    case Editor::Seq::BACKSPACE: {
       return;
     }
 
