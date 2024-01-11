@@ -158,26 +158,26 @@ struct mc {
   // Method does not perform any safety checks
   //
   // If start = end then resulting slice will be nil
-  method mc slice(usz start, usz end) noexcept {
+  method mc slice(usz start, usz end) const noexcept {
     return mc(ptr + start, end - start);
   }
 
-  method mc slice_from(usz start) noexcept { return slice(start, len); }
+  method mc slice_from(usz start) const noexcept { return slice(start, len); }
 
-  method mc slice_to(usz end) noexcept { return slice(0, end); }
+  method mc slice_to(usz end) const noexcept { return slice(0, end); }
 
   // Slice a portion of memory chunk starting from the start of
   // original slice
   //
   // In contrast with slice_to method argument specifies how many
   // bytes should be cut from the end of original slice
-  method mc slice_down(usz size) noexcept { return slice_to(len - size); }
+  method mc slice_down(usz size) const noexcept { return slice_to(len - size); }
 
   // Return a slice from original chunk that contains at most
   // <size> bytes
-  method mc crop(usz size) noexcept { return slice_to(min(len, size)); }
+  method mc crop(usz size) const noexcept { return slice_to(min(len, size)); }
 
-  method bool is_nil() noexcept { return len == 0; }
+  method bool is_nil() const noexcept { return len == 0; }
 
   method usz write(u8* bytes, usz n) noexcept {
     const usz w = min(n, len);
@@ -744,19 +744,19 @@ struct bb {
 
   let bb(u8* bytes, usz n) noexcept : ptr(bytes), len(0), cap(n) {}
 
-  method bool is_empty() noexcept { return len == 0; }
+  method bool is_empty() const noexcept { return len == 0; }
 
-  method bool is_full() noexcept { return len == cap; }
+  method bool is_full() const noexcept { return len == cap; }
 
-  method bool is_nil() noexcept { return cap == 0; }
+  method bool is_nil() const noexcept { return cap == 0; }
 
   // Returns number of bytes which can be written to buffer before it is full
-  method usz rem() noexcept { return cap - len; }
+  method usz rem() const noexcept { return cap - len; }
 
   method void reset() noexcept { len = 0; }
 
   // Returns pointer to first byte at buffer position
-  method u8* tip() noexcept { return ptr + len; }
+  method u8* tip() const noexcept { return ptr + len; }
 
   method usz write(u8* bytes, usz n) noexcept {
     var usz w = min(n, rem());
@@ -929,14 +929,14 @@ struct bb {
 
   // Returns memory chunk which is occupied by actual data
   // inside buffer
-  method mc head() noexcept { return mc(ptr, len); }
+  method mc head() const noexcept { return mc(ptr, len); }
 
   // Returns memory chunk which is a portion of buffer
   // that is available for writes
-  method mc tail() noexcept { return mc(tip(), rem()); }
+  method mc tail() const noexcept { return mc(tip(), rem()); }
 
   // Returns full body (from zero to capacity) of buffer
-  method mc body() noexcept { return mc(ptr, cap); }
+  method mc body() const noexcept { return mc(ptr, cap); }
 };
 
 fn void stdout_write(mc c) noexcept;
@@ -1049,21 +1049,21 @@ struct buffer {
 
   let buffer(T* p, usz n) noexcept : ptr(p), len(0), cap(n) {}
 
-  method bool is_empty() noexcept { return len == 0; }
+  method bool is_empty() const noexcept { return len == 0; }
 
-  method bool is_full() noexcept { return len == cap; }
+  method bool is_full() const noexcept { return len == cap; }
 
-  method bool is_nil() noexcept { return cap == 0; }
+  method bool is_nil() const noexcept { return cap == 0; }
 
   // Returns number of elements which can be appended to buffer before it is
   // full
-  method usz rem() noexcept { return cap - len; }
+  method usz rem() const noexcept { return cap - len; }
 
   method void reset() noexcept { len = 0; }
 
   // Returns chunk which is occupied by actual data
   // inside buffer
-  method chunk<T> head() noexcept { return chunk<T>(ptr, len); }
+  method chunk<T> head() const noexcept { return chunk<T>(ptr, len); }
 
   // Append new element to buffer tail
   method usz append(T elem) noexcept {
@@ -1080,7 +1080,55 @@ struct buffer {
     len += 1;
   }
 
-  method chunk<T> body() noexcept { return chunk<T>(ptr, cap); }
+  // Insert single element at specified index. All active elements with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i <= len < cap
+  //
+  // In the special case of i == len new element will be appended
+  // at the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_insert(usz i, T x) noexcept {
+    if (i == len) {
+      unsafe_append(x);
+      return;
+    }
+
+    move(cast(u8*, ptr + i), cast(u8*, ptr + i + 1), (len - i) * sizeof(T));
+    len += 1;
+    ptr[i] = x;
+  }
+
+  // Remove single element at specified index. All active elements with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i < len <= cap
+  // (hence length must be at least 1)
+  //
+  // In the special case of i == len - 1 single element will be popped
+  // from the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_remove(usz i) noexcept {
+    if (i == len - 1) {
+      len -= 1;
+      return;
+    }
+
+    move(cast(u8*, ptr + i + 1), cast(u8*, ptr + i), (len - i - 1) * sizeof(T));
+    len -= 1;
+  }
+
+  method chunk<T> body() const noexcept { return chunk<T>(ptr, cap); }
 };
 
 namespace bits {
@@ -1149,7 +1197,7 @@ struct Arena {
     return cp.slice_to(c.len);
   }
 
-  method usz rem() noexcept { return buf.len - pos; }
+  method usz rem() const noexcept { return buf.len - pos; }
 
   // Pop n bytes from previous allocations, marking them as
   // available for next allocations. Popped memory will no
@@ -1442,7 +1490,7 @@ struct DynBytesBuffer {
     buf = bb(mem::alloc(n));
   }
 
-  method bool is_nil() noexcept { return buf.is_nil(); }
+  method bool is_nil() const noexcept { return buf.is_nil(); }
 
   // Increase buffer capacity by at least n bytes
   method void grow(usz n) noexcept {
@@ -1536,7 +1584,13 @@ struct DynBytesBuffer {
 
   method void reset() noexcept { buf.reset(); }
 
-  method mc head() noexcept { return buf.head(); }
+  method void reset(usz n) noexcept {
+    must(n <= buf.len);
+
+    buf.len = n;
+  }
+
+  method mc head() const noexcept { return buf.head(); }
 };
 
 // Dynamically allocated bytes buffer
@@ -1688,6 +1742,32 @@ struct DynBuffer {
     grow(n);
 
     buf.unsafe_append(elem);
+  }
+
+  // Insert single element at specified index. All elements with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  method void insert(usz i, T x) noexcept {
+    must(i <= buf.len);
+
+    if (buf.rem() >= 1) {
+      buf.unsafe_insert(i, x);
+      return;
+    }
+
+    const usz n = determine_bytes_grow_amount(buf.cap, 1);
+    grow(n);
+
+    buf.unsafe_insert(i, x);
+  }
+
+  // Remove single element at specified index. All active elements with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  method void remove(usz i) noexcept {
+    must(i < buf.len);
+
+    buf.unsafe_remove(i);
   }
 
   method void free() noexcept {

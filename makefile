@@ -38,16 +38,20 @@ endif
 default: build
 
 .PHONY: build
-build: dirs ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit
+build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
 
+.PHONY: info
+info:
+	@echo "${BUILD_KIND} build"
+
 ${BIN_DIR}:
-	mkdir -p ${BIN_DIR}
+	@mkdir -p ${BIN_DIR}
 
 ${CACHE_DIR}:
-	mkdir -p ${CACHE_DIR}
+	@mkdir -p ${CACHE_DIR}
 
 ${BIN_DIR}/nord: ${CACHE_DIR}/main.o
 	@${CC} -o $@ $^
@@ -79,4 +83,4 @@ ${CACHE_DIR}/flat_fit.o: src/flat_fit.cpp makefile
 
 .PHONY: clean
 clean:
-	rm -rf bin cache
+	@rm -rf bin cache

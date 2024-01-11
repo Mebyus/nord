@@ -544,6 +544,26 @@ struct TextLine {
     return data;
   }
 
+  method void crop(usz n) noexcept {
+    tokenized = false;
+    if (!changed.is_nil()) {
+      changed.reset(n);
+      return;
+    }
+    data = data.slice_to(n);
+  }
+
+  method void append(str text) noexcept {
+    if (text.is_nil()) {
+      return;
+    }
+    tokenized = false;
+    if (changed.is_nil()) {
+      changed = DynBytesBuffer(data);
+    }
+    changed.write(text);
+  }
+
   method void insert(usz i, u8 x) noexcept {
     if (changed.is_nil()) {
       changed = DynBytesBuffer(data);
@@ -575,6 +595,11 @@ struct TextLine {
       tokens.append(tok);
       tok = lx.lex();
     }
+  }
+
+  method void free() noexcept {
+    tokens.free();
+    changed.free();
   }
 };
 
@@ -653,6 +678,7 @@ struct Editor {
 
     DELETE,
     BACKSPACE,
+    ENTER,
   };
 
   struct Key {
@@ -778,7 +804,7 @@ struct Editor {
     var usz j = vy;
     while (y < vrows - 1 && j < lines.len()) {
       draw_gutter(cast(u32, j + 1));
-      change_text_color(default_color);
+      // change_text_color(default_color);
       draw_line(j, max_text_width);
       term_buf.nl();
 
@@ -789,7 +815,7 @@ struct Editor {
     // draw last line without newline at the end
     if (y == vrows - 1 && j < lines.len()) {
       draw_gutter(cast(u32, j + 1));
-      term_buf.set_text_color(default_color);
+      // term_buf.set_text_color(default_color);
       draw_line(j, max_text_width);
     }
   }
@@ -874,17 +900,51 @@ struct Editor {
   }
 
   method void backspace_at_cursor() noexcept {
-    const usz line_index = vy + ty;
-    const usz remove_index = vx + tx - 1;
+    const u32 line_index = vy + ty;
+    const u32 cursor_index = vx + tx;
+
+    if (cursor_index == 0) {
+      if (line_index == 0) {
+        return;
+      }
+
+      const u32 prev_line_length = cast(u32, lines.buf.ptr[line_index - 1].content().len);
+      var str text = lines.buf.ptr[line_index].content();
+      lines.buf.ptr[line_index - 1].append(text);
+      lines.buf.ptr[line_index].free();
+      lines.remove(line_index);
+
+      move_cursor_up();
+      tx = prev_line_length;
+
+      full_viewport_upd_flag = true;
+      return;
+    }
+
+    const u32 remove_index = cursor_index - 1;
     lines.buf.ptr[line_index].remove(remove_index);
 
     // move cursor to previous column after backspacing a character
     tx -= 1;
 
     redraw_line_at_cursor();
-    update_cursor_position();
     term_buf.show_cursor();
-    term_buf.flush();
+  }
+
+  method void split_line_at_cursor() noexcept {
+    const usz line_index = vy + ty;
+    const usz split_index = vx + tx;
+
+    lines.insert(
+        line_index + 1,
+        TextLine(lines.buf.ptr[line_index].content().slice_from(split_index)));
+
+    lines.buf.ptr[line_index].crop(split_index);
+
+    ty += 1;
+    tx = 0;
+
+    full_viewport_upd_flag = true;
   }
 
   method void trim_cursor_position_by_line_length() {
@@ -915,7 +975,7 @@ struct Editor {
   }
 
   method void move_viewport_down() noexcept {
-    if (vy >= lines.len() - 1) {
+    if (vy + ty >= lines.len() - 1) {
       return;
     }
     vy += 1;
@@ -975,12 +1035,12 @@ struct Editor {
   }
 
   method void jump_viewport_down() noexcept {
-    if (vy >= lines.len() - 1) {
+    if (vy + ty >= lines.len() - 1) {
       return;
     }
 
-    if (vy + viewport_page_stride > lines.len() - 1) {
-      vy = cast(u32, lines.len()) - 1;
+    if (vy + vrows + viewport_page_stride > lines.len() - 1) {
+      vy = cast(u32, lines.len()) - vrows;
     } else {
       vy += viewport_page_stride;
     }
@@ -1041,6 +1101,9 @@ fn internal Editor::Key read_key_input() noexcept {
   }
 
   if (c != 0x1B) {
+    if (c == 0x0D) {
+      return Editor::Key{.c = 0, .s = Editor::Seq::ENTER};
+    }
     if (c == 0x7F) {
       return Editor::Key{.c = 0, .s = Editor::Seq::BACKSPACE};
     }
@@ -1155,7 +1218,12 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
 
     case Editor::Seq::BACKSPACE: {
       e.backspace_at_cursor();
-      return;
+      break;
+    }
+
+    case Editor::Seq::ENTER: {
+      e.split_line_at_cursor();
+      break;
     }
 
     case Editor::Seq::UNKNOWN: {
