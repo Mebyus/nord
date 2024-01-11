@@ -38,7 +38,7 @@ endif
 default: build
 
 .PHONY: build
-build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit
+build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit ${BIN_DIR}/game
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -65,6 +65,9 @@ ${BIN_DIR}/ins: ${CACHE_DIR}/input_sequence_inspect.o
 ${BIN_DIR}/flatfit: ${CACHE_DIR}/flat_fit.o
 	@${CC} -o $@ $^
 
+${BIN_DIR}/game: ${CACHE_DIR}/game.o
+	@${CC} -o $@ $^ -lSDL2
+
 ${CACHE_DIR}/main.o: src/main.cpp makefile
 	@${CC} ${CPPFLAGS} ${CACHE_DIR}/main.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/main.d
@@ -80,6 +83,10 @@ ${CACHE_DIR}/input_sequence_inspect.o: src/input_sequence_inspect.cpp makefile
 ${CACHE_DIR}/flat_fit.o: src/flat_fit.cpp makefile
 	@${CC} ${CPPFLAGS} ${CACHE_DIR}/flat_fit.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/flat_fit.d
+
+${CACHE_DIR}/game.o: src/game.cpp makefile
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/game.d ${CFLAGS} -I./vendor/include -o $@ -c $<
+-include ${CACHE_DIR}/game.d
 
 .PHONY: clean
 clean:

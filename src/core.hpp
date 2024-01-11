@@ -1020,11 +1020,11 @@ struct chunk {
 
   let chunk(T* elems, usz n) noexcept : ptr(elems), len(n) {}
 
-  method bool is_nil() noexcept { return len == 0; }
+  method bool is_nil() const noexcept { return len == 0; }
 
-  method mc as_mc() noexcept { return mc(cast(u8*, ptr), size()); }
+  method mc as_mc() const noexcept { return mc(cast(u8*, ptr), size()); }
 
-  method usz size() noexcept { return chunk_size(T, len); }
+  method usz size() const noexcept { return chunk_size(T, len); }
 
   method void clear() noexcept { as_mc().clear(); }
 };
@@ -1819,15 +1819,15 @@ struct cstr {
   // bytes in string, not including zero terminator
   let cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
 
-  method bool is_nil() noexcept { return len == 0; }
+  method bool is_nil() const noexcept { return len == 0; }
 
   // Returns Memory Chunk with stored bytes. Zero terminator
   // is not included
-  method mc as_str() noexcept { return mc(ptr, len); }
+  method mc as_str() const noexcept { return mc(ptr, len); }
 
   // Returns Memory Chunk with stored bytes. Includes zero terminator
   // in its length
-  method mc with_term() noexcept { return mc(ptr, len + 1); }
+  method mc with_term() const noexcept { return mc(ptr, len + 1); }
 };
 
 #define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
