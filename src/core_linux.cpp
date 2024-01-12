@@ -99,13 +99,19 @@ fn WriteResult write(FileDescriptor fd, mc c) noexcept {
   return WriteResult(cast(usz, n));
 }
 
-fn FileReadResult read_file(cstr filename) noexcept {
-  var dirty struct stat s;
-  var i32 rcode = stat(cast(char*, filename.ptr), &s);
+fn FileReadResult read_file(str filename) noexcept {
+  const usz path_buf_length = 1 << 12;
+  if (filename.len >= path_buf_length) {
+    return FileReadResult(FileReadResult::Code::PathTooLong);
+  }
+
+  var u8 path_buf[path_buf_length] dirty;
+  var mc path_mc = mc(path_buf, filename.len + 1);
+  var cstr path = unsafe_copy_as_cstr(filename, path_mc);
+
+  var struct stat s dirty;
+  const i32 rcode = stat(cast(char*, path.ptr), &s);
   if (rcode < 0) {
-    if (errno == EEXIST) {
-      return FileReadResult(FileReadResult::Code::AlreadyExists);
-    }
     return FileReadResult(FileReadResult::Code::Error);
   }
 
@@ -115,11 +121,8 @@ fn FileReadResult read_file(cstr filename) noexcept {
     return FileReadResult(mc());
   }
 
-  const i32 fd = open(cast(char*, filename.ptr), O_RDONLY);
+  const i32 fd = open(cast(char*, path.ptr), O_RDONLY);
   if (fd < 0) {
-    if (errno == EEXIST) {
-      return FileReadResult(FileReadResult::Code::AlreadyExists);
-    }
     return FileReadResult(FileReadResult::Code::Error);
   }
 

@@ -62,7 +62,7 @@ fn i32 main(i32 argc, u8** argv) noexcept {
     return 1;
   }
   var cstr filename = cstr(argv[1]);
-  var fs::FileReadResult rr = fs::read_file(filename);
+  var fs::FileReadResult rr = fs::read_file(filename.as_str());
   if (rr.is_err()) {
     return 1;
   }

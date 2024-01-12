@@ -734,7 +734,7 @@ struct Editor {
     term_buf.flush();
   }
 
-  method void init(cstr filename) noexcept {
+  method void init(str filename) noexcept {
     var fs::FileReadResult result = fs::read_file(filename);
     if (result.is_err()) {
       // TODO: display error message
@@ -1309,7 +1309,7 @@ fn i32 main(i32 argc, u8** argv) noexcept {
     e.init();
   } else {
     var cstr filename = cstr(argv[1]);
-    e.init(filename);
+    e.init(filename.as_str());
   }
 
   while (true) {

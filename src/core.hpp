@@ -201,24 +201,16 @@ struct mc {
     if (is_nil()) {
       return 0;
     }
-    return unsafe_write(x);
-  }
-
-  method usz unsafe_write(u8* bytes, usz n) noexcept {
-    copy(bytes, ptr, n);
-    return n;
-  }
-
-  method usz unsafe_write(mc c) noexcept {
-    copy(c.ptr, ptr, c.len);
-    return c.len;
-  }
-
-  // Write single byte to chunk
-  method usz unsafe_write(u8 x) noexcept {
-    ptr[0] = x;
+    unsafe_write(x);
     return 1;
   }
+
+  method void unsafe_write(u8* bytes, usz n) noexcept { copy(bytes, ptr, n); }
+
+  method void unsafe_write(mc c) noexcept { copy(c.ptr, ptr, c.len); }
+
+  // Write single byte to chunk
+  method void unsafe_write(u8 x) noexcept { ptr[0] = x; }
 
   // Reverse bytes in chunk
   method void reverse() noexcept {
@@ -1823,12 +1815,27 @@ struct cstr {
 
   // Returns Memory Chunk with stored bytes. Zero terminator
   // is not included
-  method mc as_str() const noexcept { return mc(ptr, len); }
+  method str as_str() const noexcept { return str(ptr, len); }
 
   // Returns Memory Chunk with stored bytes. Includes zero terminator
   // in its length
   method mc with_term() const noexcept { return mc(ptr, len + 1); }
 };
+
+// Copies entire memory chunk from source into destination and
+// adds null terminator at the the end. Resulting C string in
+// destination memory chunk will occupy exactly source length + 1
+// bytes. Destination must have enough space to hold that much
+// data
+//
+// Returns C string structure which borrows memory from destination
+fn cstr unsafe_copy_as_cstr(str src, mc dst) noexcept {
+  must(dst.len >= src.len + 1);
+
+  dst.unsafe_write(src);
+  dst.ptr[src.len] = 0;
+  return cstr(dst.ptr, src.len);
+}
 
 #define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
 
@@ -1867,6 +1874,8 @@ struct FileReadResult {
 
     // Generic error, no specifics known
     Error,
+
+    PathTooLong,
 
     AlreadyExists,
   };
