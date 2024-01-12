@@ -147,6 +147,8 @@ struct mc {
 
   let mc(u8* bytes, usz n) noexcept : ptr(bytes), len(n) {}
 
+  u8& operator[](usz i) { return ptr[i]; }
+
   // Fill chunk with zero bytes
   method void clear() noexcept;
 
@@ -214,12 +216,14 @@ struct mc {
 
   // Reverse bytes in chunk
   method void reverse() noexcept {
-    var dirty usz i, j;
-    var dirty u8 x;
-    for (i = 0, j = len - 1; i < j; i += 1, j -= 1) {
-      x = ptr[i];
-      ptr[i] = ptr[j];
-      ptr[j] = x;
+    if (is_nil()) {
+      return;
+    }
+
+    var usz i = 0;
+    var usz j = len - 1;
+    for (; i < j; i += 1, j -= 1) {
+      swap(ptr[i], ptr[j]);
     }
   };
 
@@ -522,7 +526,7 @@ internal const StringLookupEntry byte_decimal_lookup_table[] = {
     {456, 3}, {459, 3}, {462, 3}, {465, 3},
 };
 
-fn internal inline u8 decimal_digit_to_charcode(u8 digit) noexcept {
+fn internal inline constexpr u8 number_to_dec_digit(u8 digit) noexcept {
   return digit + cast(u8, '0');
 }
 
@@ -545,7 +549,7 @@ method usz mc::fmt_dec(u64 x) noexcept {
     if (len == 0) {
       return 0;
     }
-    ptr[0] = decimal_digit_to_charcode((u8)x);
+    ptr[0] = number_to_dec_digit((u8)x);
     return 1;
   }
   if (x < 100) {
@@ -562,7 +566,7 @@ method usz mc::fmt_dec(u64 x) noexcept {
   do {  // generate digits in reverse order
     var u8 digit = cast(u8, x % 10);
     x /= 10;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     i += 1;
   } while (x != 0 && i < len);
 
@@ -578,7 +582,7 @@ method usz mc::fmt_dec(u64 x) noexcept {
 
 method usz mc::unsafe_fmt_dec(u64 x) noexcept {
   if (x < 10) {
-    ptr[0] = decimal_digit_to_charcode((u8)x);
+    ptr[0] = number_to_dec_digit((u8)x);
     return 1;
   }
   if (x < 100) {
@@ -592,7 +596,7 @@ method usz mc::unsafe_fmt_dec(u64 x) noexcept {
   do {  // generate digits in reverse order
     var u8 digit = cast(u8, x % 10);
     x /= 10;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     i += 1;
   } while (x != 0);
 
@@ -614,7 +618,7 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   while (i > l - 8) {
     i -= 1;
     digit = x & 1;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     x = x >> 1;
   }
 
@@ -624,7 +628,7 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   while (i > l - 17) {
     i -= 1;
     digit = x & 1;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     x = x >> 1;
   }
 
@@ -634,7 +638,7 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   while (i > l - 26) {
     i -= 1;
     digit = x & 1;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     x = x >> 1;
   }
 
@@ -644,20 +648,20 @@ method usz mc::fmt_bin_delim(u32 x) noexcept {
   while (i > 1) {
     i -= 1;
     digit = x & 1;
-    ptr[i] = decimal_digit_to_charcode(digit);
+    ptr[i] = number_to_dec_digit(digit);
     x = x >> 1;
   }
 
-  ptr[0] = decimal_digit_to_charcode(cast(u8, x));
+  ptr[0] = number_to_dec_digit(cast(u8, x));
 
   return l;
 }
 
 namespace fmt {
 
-fn inline u8 number_to_hex_digit(u8 x) noexcept {
+fn internal inline constexpr u8 number_to_hex_digit(u8 x) noexcept {
   if (x <= 9) {
-    return x + cast(u8, '0');
+    return number_to_dec_digit(x);
   }
   return x - 0xA + cast(u8, 'A');
 }
@@ -688,9 +692,75 @@ fn void unsafe_bin_byte(mc c, u8 x) noexcept {
   do {
     i -= 1;
     const u8 digit = x & 1;
-    c.ptr[i] = decimal_digit_to_charcode(digit);
+    c.ptr[i] = number_to_dec_digit(digit);
     x = x >> 1;
   } while (i != 0);
+}
+
+// Formats a given u64 integer as a hexadecimal number of
+// fixed width (=16) format, prefixing significant digits with
+// zeroes if necessary. Memory chunk must be at least 16 bytes
+// long
+fn void unsafe_hex_fixed(mc c, u64 x) noexcept {
+  var usz i = 16;
+  // digits are written from least to most significant bit
+  do {
+    i -= 1;
+    const u8 digit = cast(u8, x & 0xF);
+    c.ptr[i] = number_to_hex_digit(digit);
+    x = x >> 4;
+  } while (i != 0);
+}
+
+fn usz unsafe_hex(mc c, u64 x) noexcept {
+  var usz i = 0;
+  // digits are written from least to most significant bit
+  do {
+    const u8 digit = cast(u8, x & 0xF);
+    c.ptr[i] = number_to_hex_digit(digit);
+    x = x >> 4;
+    i += 1;
+  } while (x != 0);
+
+  c.slice_to(i).reverse();
+  return i;
+}
+
+// Memory chunk must be at least 18 bytes long
+fn void unsafe_hex_prefix_fixed(mc c, u64 x) noexcept {
+  c.ptr[0] = '0';
+  c.ptr[1] = 'x';
+  unsafe_hex_fixed(c.slice_from(2), x);
+}
+
+fn usz unsafe_hex_prefix(mc c, u64 x) noexcept {
+  c.ptr[0] = '0';
+  c.ptr[1] = 'x';
+
+  const usz n = unsafe_hex(c.slice_from(2), x);
+
+  return 2 + n;
+}
+
+// Formats a given target (second argument) memory chunk header
+// information (i.e. address and length) into other memory
+// chunk (first argument).
+fn usz unsafe_mc(mc c, mc t) noexcept {
+  var usz len = 0;
+
+  c.unsafe_write(macro_static_str("ptr="));
+  len += 4;
+
+  unsafe_hex_prefix_fixed(c.slice_from(len), cast(u64, t.ptr));
+  len += 18;
+
+  c.slice_from(len).unsafe_write(macro_static_str(" len="));
+  len += 5;
+
+  const usz n = unsafe_hex_prefix(c.slice_from(len), t.len);
+  len += n;
+
+  return len;
 }
 
 }  // namespace fmt
@@ -1357,7 +1427,7 @@ struct alc {
 
   let alc(Gen* gen) noexcept : ptr(cast(anyptr, gen)), kind(Kind::Gen) {}
 
-  method bool is_nil() noexcept { return kind == Kind::Nil; }
+  method bool is_nil() const noexcept { return kind == Kind::Nil; }
 
   method mc alloc(usz n) noexcept {
     switch (kind) {
@@ -1605,7 +1675,7 @@ struct dbb {
     buf = bb(alc.alloc(n));
   }
 
-  method bool is_nil() noexcept { return alc.is_nil(); }
+  method bool is_nil() const noexcept { return alc.is_nil(); }
 
   // Increase buffer capacity by at least n bytes
   method void grow(usz n) noexcept {
@@ -1771,9 +1841,9 @@ struct DynBuffer {
 
   method void reset() noexcept { buf.reset(); }
 
-  method usz len() noexcept { return buf.len; }
+  method usz len() const noexcept { return buf.len; }
 
-  method chunk<T> head() noexcept { return buf.head(); }
+  method chunk<T> head() const noexcept { return buf.head(); }
 };
 
 // C String

@@ -908,7 +908,8 @@ struct Editor {
         return;
       }
 
-      const u32 prev_line_length = cast(u32, lines.buf.ptr[line_index - 1].content().len);
+      const u32 prev_line_length =
+          cast(u32, lines.buf.ptr[line_index - 1].content().len);
       var str text = lines.buf.ptr[line_index].content();
       lines.buf.ptr[line_index - 1].append(text);
       lines.buf.ptr[line_index].free();
@@ -1297,12 +1298,6 @@ fn FlatMap fit_into_flat_map(usz cap,
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
-  // var str text = macro_static_str("\"hello\"  \t world \n 12.3");
-  // // var str text = macro_static_str("}}");
-  // var nord::Lexer lx = nord::Lexer(nil, text);
-  // nord::dump_tokens(1, lx);
-  // return 0;
-
   populate_flat_map(token_kind_map,
                     chunk<Token>(cast(Token*, static_literals_table), 59));
   if (argc < 2) {
