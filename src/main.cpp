@@ -15,6 +15,8 @@
 
 #include "core_linux.cpp"
 
+var coven::log::Logger lg;
+
 #define CTRL_KEY(k) ((k) & 0x1f)
 
 var global struct termios original_terminal_state;
@@ -55,6 +57,11 @@ fn internal void exit_raw_mode() noexcept {
   }
 }
 
+fn internal void flush_logger() noexcept {
+  lg.info(macro_static_str("nord exit"));
+  lg.flush();
+}
+
 fn internal void enter_raw_mode() noexcept {
   i32 rcode = tcgetattr(STDIN_FILENO, &original_terminal_state);
   if (rcode < 0) {
@@ -77,6 +84,7 @@ fn internal void enter_raw_mode() noexcept {
     panic(macro_static_str("failed to enter raw mode"));
   }
   atexit(exit_raw_mode);
+  atexit(flush_logger);
 }
 
 fn internal struct winsize get_viewport_size() noexcept {
@@ -692,6 +700,9 @@ struct Editor {
 
   DynBuffer<TextLine> lines;
 
+  // path to a file being edited
+  str filename;
+
   // cursor position, originating from top-left corner
   u32 cx;
   u32 cy;
@@ -734,13 +745,14 @@ struct Editor {
     term_buf.flush();
   }
 
-  method void init(str filename) noexcept {
-    var fs::FileReadResult result = fs::read_file(filename);
+  method void init(str name) noexcept {
+    var fs::FileReadResult result = fs::read_file(name);
     if (result.is_err()) {
       // TODO: display error message
       return;
     }
 
+    filename = name;
     var mc text = result.data;
 
     lines = split_lines(text);
@@ -790,6 +802,34 @@ struct Editor {
     vcols = cols_num - 6;
 
     viewport_page_stride = (2 * rows_num) / 3;
+  }
+
+  method void save_file() noexcept {
+    lg.info(macro_static_str("saving file"));
+    const fs::OpenResult r = fs::create(filename);
+    if (r.is_err()) {
+      lg.error(macro_static_str("failed to create file"));
+      return;
+    }
+
+    var u8 write_buf[1 << 13] dirty;
+    var fs::BufFileWriter w =
+        fs::BufFileWriter(r.fd, mc(write_buf, sizeof(write_buf)));
+
+    for (usz i = 0; i < lines.len(); i += 1) {
+      var fs::WriteResult wr = w.write(lines.buf.ptr[i].content());
+      if (wr.is_err()) {
+        return;
+      }
+
+      wr = w.lf();
+      if (wr.is_err()) {
+        return;
+      }
+    }
+
+    w.close();  // TODO: check this error
+    lg.info(macro_static_str("file saved"));
   }
 
   method void draw_text() noexcept {
@@ -1178,6 +1218,11 @@ fn internal void handle_key_input(Editor::Key k) noexcept {
       exit(0);
     }
 
+    if (k.c == CTRL_KEY('s')) {
+      e.save_file();
+      return;
+    }
+
     if (text::is_printable_ascii_character(k.c)) {
       e.insert_at_cursor(k.c);
       return;
@@ -1298,6 +1343,10 @@ fn FlatMap fit_into_flat_map(usz cap,
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
+  lg.init(macro_static_str("log.log"));
+  lg.info(macro_static_str("nord start"));
+  // lg.flush();
+
   populate_flat_map(token_kind_map,
                     chunk<Token>(cast(Token*, static_literals_table), 59));
   if (argc < 2) {

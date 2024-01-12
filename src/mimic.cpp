@@ -971,7 +971,7 @@ struct Lexer {
 };
 
 fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer& lx) noexcept {
-  var u8 write_buf[1 << 13];
+  var u8 write_buf[1 << 13] dirty;
   var fs::BufFileWriter w =
       fs::BufFileWriter(fd, mc(write_buf, sizeof(write_buf)));
 
