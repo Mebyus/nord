@@ -138,26 +138,46 @@ fn void specify_vertices() noexcept {
   glDisableVertexAttribArray(0);
 }
 
-fn u32 compile_vertex_shader(str src) noexcept {
-  const u32 handle = glCreateShader(GL_VERTEX_SHADER);
-
+fn void bind_shader_to_handle(u32 handle, str src) noexcept {
   const i32 lens[] = {cast(i32, src.len)};
   glShaderSource(handle, 1, cast(char**, &src.ptr), lens);
   glCompileShader(handle);
+}
 
+fn u32 compile_vertex_shader(str src) noexcept {
+  const u32 handle = glCreateShader(GL_VERTEX_SHADER);
+  bind_shader_to_handle(handle, src);
   return handle;
 }
 
 fn u32 compile_fragment_shader(str src) noexcept {
   const u32 handle = glCreateShader(GL_FRAGMENT_SHADER);
+  bind_shader_to_handle(handle, src);
   return handle;
 }
 
 fn void create_shader_prog() noexcept {
   gl_prog_handle = glCreateProgram();
 
-  const u32 vertex_shader = compile_vertex_shader();
-  const u32 fragment_shader = compile_fragment_shader();
+  var str vertex_shader_filename = macro_static_str("shaders/vertex.glsl");
+  var str fragment_shader_filename = macro_static_str("shaders/fragment.glsl");
+
+  fs::FileReadResult rr = fs::read_file(vertex_shader_filename);
+  if (rr.is_err()) {
+    stdout_write_all(macro_static_str("failed to load vertex shader source"));
+    exit(1);
+  }
+  var str vertex_shader_source = rr.data;
+
+  rr = fs::read_file(fragment_shader_filename);
+  if (rr.is_err()) {
+    stdout_write_all(macro_static_str("failed to load fragment shader source"));
+    exit(1);
+  }
+  var str fragment_shader_source = rr.data;
+
+  const u32 vertex_shader = compile_vertex_shader(vertex_shader_source);
+  const u32 fragment_shader = compile_fragment_shader(fragment_shader_source);
 
   glAttachShader(gl_prog_handle, vertex_shader);
   glAttachShader(gl_prog_handle, fragment_shader);
@@ -166,17 +186,44 @@ fn void create_shader_prog() noexcept {
   glValidateProgram(gl_prog_handle);
 }
 
-fn void create_gl_pipeline() noexcept {}
+fn void create_gl_pipeline() noexcept {
+  create_shader_prog();
+}
+
+fn void handle_input() noexcept {
+  SDL_Event e;
+
+  while (SDL_PollEvent(&e) != 0) {
+    if (e.type == SDL_QUIT) {
+      exit(0);
+    }
+  }
+}
+
+fn void setup_draw_pipeline() noexcept {
+  glDisable(GL_DEPTH_TEST);
+  glDisable(GL_CULL_FACE);
+
+  glViewport(0, 0, window_width, window_height);
+  glClearColor(0.2f, 0.2f, 0.0f, 1.0f);
+
+  glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
+
+  glUseProgram(gl_prog_handle);
+}
+
+fn void draw() noexcept {
+  glBindVertexArray(gl_ao_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_bo_handle);
+
+  glDrawArrays(GL_TRIANGLES, 0, 3);
+}
 
 fn void run_main_loop() noexcept {
   while (true) {
-    SDL_Event e;
-
-    while (SDL_PollEvent(&e) != 0) {
-      if (e.type == SDL_QUIT) {
-        exit(0);
-      }
-    }
+    handle_input();
+    setup_draw_pipeline();
+    draw();
 
     SDL_GL_SwapWindow(window_ptr);
   }
