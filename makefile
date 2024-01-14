@@ -10,7 +10,7 @@ DEBUG_DIR = debug
 # Compiler executable
 CC = g++
 
-CSTANDARD = 17
+CSTANDARD = 20
 OPTIMIZATION = 2
 
 # Preprocessor flags
@@ -19,7 +19,7 @@ CPPFLAGS = -MMD -MP -MF
 # Compiler warnings
 WARNINGS = -Wall -Wextra -Wconversion -Wunreachable-code -Wshadow -Wundef -Wfloat-equal -Wformat=2 \
 -Wpointer-arith -Winit-self -Wduplicated-branches -Wduplicated-cond -Wnull-dereference -Wswitch-enum -Wvla \
--Wnoexcept -Wswitch-default -Wno-main
+-Wnoexcept -Wswitch-default -Wno-main -Wno-shadow -Wshadow=local
 
 # Compiler code generation conventions flags
 GENFLAGS = -fwrapv -fno-exceptions
@@ -38,7 +38,7 @@ endif
 default: build
 
 .PHONY: build
-build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit ${BIN_DIR}/game
+build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit mimic ${BIN_DIR}/game
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -46,6 +46,12 @@ dirs: ${BIN_DIR} ${CACHE_DIR}
 .PHONY: info
 info:
 	@echo "${BUILD_KIND} build"
+
+.PHONY: mimic
+mimic: ${BIN_DIR}/mimic
+
+.PHONY: math
+math: ${CACHE_DIR}/math.o
 
 ${BIN_DIR}:
 	@mkdir -p ${BIN_DIR}
@@ -87,6 +93,10 @@ ${CACHE_DIR}/flat_fit.o: src/flat_fit.cpp makefile
 ${CACHE_DIR}/game.o: src/game.cpp makefile
 	@${CC} ${CPPFLAGS} ${CACHE_DIR}/game.d ${CFLAGS} -I./vendor/include -o $@ -c $<
 -include ${CACHE_DIR}/game.d
+
+${CACHE_DIR}/math.o: src/math.cpp makefile
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/math.d ${CFLAGS} -o $@ -c $<
+-include ${CACHE_DIR}/math.d
 
 .PHONY: clean
 clean:

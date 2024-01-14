@@ -1,14 +1,14 @@
-include
-define
-undef
+#include
+#define
+#undef
 
-if
-elif
-else
-ifdef
-ifndef
-endif
-error
+#if
+#elif
+#else
+#ifdef
+#ifndef
+#endif
+#error
 
 var
 const

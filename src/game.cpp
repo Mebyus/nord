@@ -27,6 +27,7 @@ var SDL_GLContext gl_context = nil;
 
 var u32 gl_ao_handle = 0;
 var u32 gl_bo_handle = 0;
+var u32 gl_bo_colors_handle = 0;
 
 var u32 gl_prog_handle = 0;
 var u32 gl_pipeline_handle = 0;
@@ -121,20 +122,35 @@ fn void specify_vertices() noexcept {
       0.0f,  0.8f,  0.0f,  //
   };
 
+  const f32 colors[] = {
+      1.0f, 0.0f, 0.0f,  //
+      0.0f, 1.0f, 0.0f,  //
+      0.0f, 0.0f, 1.0f,  //
+  };
+
   var chunk<f32> vp = chunk<f32>(const_cast<f32*>(p), sizeof(p) / sizeof(f32));
+  var chunk<f32> vc =
+      chunk<f32>(const_cast<f32*>(colors), sizeof(colors) / sizeof(f32));
 
   glGenVertexArrays(1, &gl_ao_handle);
   glBindVertexArray(gl_ao_handle);
 
+  glEnableVertexAttribArray(0);
   glGenBuffers(1, &gl_bo_handle);
   glBindBuffer(GL_ARRAY_BUFFER, gl_bo_handle);
   glBufferData(GL_ARRAY_BUFFER, vp.size(), vp.ptr, GL_STATIC_DRAW);
-
-  glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, nil);
+
+  glEnableVertexAttribArray(1);
+  glGenBuffers(1, &gl_bo_colors_handle);
+  glBindBuffer(GL_ARRAY_BUFFER, gl_bo_colors_handle);
+  glBufferData(GL_ARRAY_BUFFER, vc.size(), vc.ptr, GL_STATIC_DRAW);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, nil);
 
   // TODO: cleanup ?
   glBindVertexArray(0);
+
+  glDisableVertexAttribArray(1);
   glDisableVertexAttribArray(0);
 }
 
@@ -190,11 +206,20 @@ fn void create_gl_pipeline() noexcept {
   create_shader_prog();
 }
 
+var u64 frame_counter = 0;
+
 fn void handle_input() noexcept {
   SDL_Event e;
 
   while (SDL_PollEvent(&e) != 0) {
     if (e.type == SDL_QUIT) {
+      var u8 b[24] dirty;
+      var bb buf = bb(b, sizeof(b));
+      
+      buf.fmt_dec(frame_counter);
+      buf.lf();
+      stdout_write_all(buf.head());
+
       exit(0);
     }
   }
@@ -226,6 +251,7 @@ fn void run_main_loop() noexcept {
     draw();
 
     SDL_GL_SwapWindow(window_ptr);
+    frame_counter += 1;
   }
 }
 

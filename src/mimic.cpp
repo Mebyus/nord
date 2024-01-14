@@ -1,6 +1,14 @@
+#include <ctype.h>
+#include <errno.h>
+#include <execinfo.h>
+#include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
+#include <termios.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "core.hpp"
@@ -266,7 +274,7 @@ struct Token {
     AssignRem,
   };
 
-  // Pair of kind + subkind to which exactly identifies
+  // Pair of kind + subkind which exactly identifies
   // special word token
   struct WordSpec {
     Kind kind;
@@ -388,23 +396,29 @@ method usz Token::fmt(mc c) noexcept {
     case Kind::Keyword:
     case Kind::Directive:
     case Kind::Builtin:
+      return buf.len;
+
     case Kind::Charlit:
     case Kind::Float:
     case Kind::String:
     case Kind::Identifier: {
-      buf.write(lit);
+      if ((flags & cast(u8, Flags::TextLiteral)) != 0) {
+        buf.write(lit.text);
+      }
       return buf.len;
     }
 
     case Kind::Integer: {
-      buf.fmt_dec(val);
+      buf.fmt_dec(lit.val);
       return buf.len;
     }
 
     case Kind::Other: {
     }
 
-    case Kind::Illegal:
+    case Kind::Illegal: {
+      return buf.len;
+    }
 
     case Kind::Empty:
     case Kind::EOF:
@@ -463,6 +477,22 @@ struct Lexer {
 
   // lexer reached end of input
   bool eof;
+
+  let Lexer(mem::Arena* a,
+            container::FlatMap<Token::WordSpec>* m,
+            str t) noexcept
+      : text(t),
+        map(m),
+        arena(a),
+        i(0),
+        s(0),
+        mark(0),
+        c(0),
+        next(0),
+        eof(false) {
+    //
+    init();
+  }
 
   method void init() noexcept {
     // prefill next and current bytes
@@ -995,7 +1025,17 @@ fn fs::WriteResult dump_tokens(fs::FileDescriptor fd, Lexer& lx) noexcept {
   return w.flush();
 }
 
-fn void lex_file(cstr filename) noexcept {}
+fn void lex_file(str filename) noexcept {
+  var fs::FileReadResult rr = fs::read_file(filename);
+  if (rr.is_err()) {
+    exit(1);
+  }
+
+  var mem::Arena arena = mem::Arena(mem::alloc(1 << 26));
+  var Lexer lx = Lexer(&arena, nil, rr.data);
+
+  dump_tokens(1, lx);
+}
 
 }  // namespace mimic
 
@@ -1005,6 +1045,6 @@ fn i32 main(i32 argc, u8** argv) noexcept {
   }
 
   var cstr filename = cstr(argv[1]);
-  mimic::lex_file(filename);
+  mimic::lex_file(filename.as_str());
   return 0;
 }

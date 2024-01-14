@@ -1195,15 +1195,23 @@ struct buffer {
 
 namespace bits {
 
-fn inline bool is_aligned_16(anyptr x) noexcept {
+fn inline constexpr bool is_power_of_2(u32 x) noexcept {
+  return (x & (x - 1)) == 0;
+}
+
+fn inline constexpr bool is_power_of_2(u64 x) noexcept {
+  return (x & (x - 1)) == 0;
+}
+
+fn inline constexpr bool is_aligned_16(anyptr x) noexcept {
   return (cast(uptr, x) & 0x0F) == 0;
 }
 
-fn inline bool is_aligned_16(usz x) noexcept {
+fn inline constexpr bool is_aligned_16(usz x) noexcept {
   return (x & 0x0F) == 0;
 }
 
-fn inline usz align_16(usz x) noexcept {
+fn inline constexpr usz align_16(usz x) noexcept {
   usz a = x & 0x0F;
   a = ((~a) + 1) & 0x0F;
   return x + a;
