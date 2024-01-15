@@ -98,6 +98,9 @@ ${CACHE_DIR}/math.o: src/math.cpp makefile
 	@${CC} ${CPPFLAGS} ${CACHE_DIR}/math.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/math.d
 
+${CACHE_DIR}/syscall_linux_amd64.o: src/syscall_linux_amd64.s
+	@as -o $@ $<
+
 .PHONY: clean
 clean:
 	@rm -rf bin cache

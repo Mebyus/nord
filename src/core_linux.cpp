@@ -106,7 +106,8 @@ fn OpenResult create(str filename) noexcept {
   var mc path_mc = mc(path_buf, filename.len + 1);
   var cstr path = unsafe_copy_as_cstr(filename, path_mc);
 
-  const i32 fd = ::open(cast(char*, path.ptr), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+  const i32 fd =
+      ::open(cast(char*, path.ptr), O_WRONLY | O_CREAT | O_TRUNC, 0644);
   if (fd < 0) {
     return OpenResult(OpenResult::Code::Error);
   }
@@ -187,11 +188,33 @@ fn FileReadResult read_file(str filename) noexcept {
 
 extern "C" {
 
-fn i32 coven_linux_syscall_open(u8* s, u32 flags1, u32 flags2) noexcept;
+[[noreturn]] fn void coven_linux_syscall_exit(i32 code) noexcept;
+
+fn anyptr coven_linux_syscall_mmap(anyptr ptr,
+                                   usz len,
+                                   i32 prot,
+                                   i32 flags,
+                                   i32 fd,
+                                   i32 offset) noexcept;
+
+// First argument must be a null-terminated string with filename
+fn i32 coven_linux_syscall_open(const u8* s, u32 flags, u32 mode) noexcept;
 
 fn i32 coven_linux_syscall_read() noexcept;
 
 fn i32 coven_linux_syscall_close(i32 fd) noexcept;
+//
 }
 
-namespace os::linux {}  // namespace os::linux
+namespace os::linux {
+
+[[noreturn]] fn void abort() noexcept {
+  // hlt instruction can be executed by cpu only in privileged mode
+  //
+  // When invoked in userspace it will always produce cpu exception.
+  // By default the program will then crash and produce coredump
+  asm("hlt");
+  __builtin_unreachable();
+}
+
+}  // namespace os::linux

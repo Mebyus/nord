@@ -27,6 +27,8 @@ union vec3 {
     f32 z;
   };
 
+  let constexpr vec3() noexcept : x(0.0), y(0.0), z(0.0) {}
+
   let constexpr vec3(f32 x, f32 y, f32 z) noexcept : x(x), y(y), z(z) {}
 };
 
@@ -58,10 +60,30 @@ fn inline constexpr f32 abs(vec3 a) noexcept {
   return square_root(dot(a, a));
 }
 
+// Matrix 3 x 3. First index traverses rows, second - columns.
+// In table form matrix looks as follows:
+//
+//  | xx  xy  xz |
+//  |            |
+//  | yx  yy  yz |
+//  |            |
+//  | zx  zy  zz |
+//
 struct mat3 {
   f32 xx, xy, xz;
   f32 yx, yy, yz;
   f32 zx, zy, zz;
+
+  let constexpr mat3(vec3 x, vec3 y, vec3 z) noexcept
+      : xx(x.x),
+        xy(y.x),
+        xz(z.x),
+        yx(x.y),
+        yy(y.y),
+        yz(z.y),
+        zx(x.z),
+        zy(y.z),
+        zz(z.z) {}
 };
 
 fn inline constexpr vec3 mul(mat3 m, vec3 v) noexcept {
@@ -74,7 +96,13 @@ fn inline constexpr vec3 mul(mat3 m, vec3 v) noexcept {
 
 fn inline constexpr mat3 mul(mat3 a, mat3 b) noexcept {}
 
-fn inline constexpr mat3 mul(f32 k, mat3 m) noexcept {}
+fn inline constexpr mat3 mul(f32 k, mat3 m) noexcept {
+  const vec3 x = mul(k, vec3(m.xx, m.yx, m.zx));
+  const vec3 y = mul(k, vec3(m.xy, m.yy, m.zy));
+  const vec3 z = mul(k, vec3(m.xz, m.yz, m.zz));
+
+  return mat3(x, y, z);
+}
 
 // Unit quaternion (i.e. with length equal 1)
 struct uqn {
@@ -89,7 +117,7 @@ struct uqn {
   let constexpr uqn(f32 r) noexcept : r(r), x(0.0), y(0.0), z(0.0) {}
 
   let constexpr uqn(vec3 v) noexcept : r(0.0), x(v.x), y(v.y), z(v.z) {}
-`
+
   let constexpr uqn(f32 r, f32 x, f32 y, f32 z) noexcept
       : r(r), x(x), y(y), z(z) {}
 

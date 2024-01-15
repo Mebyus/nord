@@ -14,15 +14,12 @@
 
 #include "core_linux.cpp"
 
-struct IndexedWord {
-  str word;
-  usz index;
-};
+typedef container::FlatMap<usz>::Pair IndexedWord;
 
 fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
   var DynBuffer<IndexedWord> buf = DynBuffer<IndexedWord>();
 
-  var usz n = 0; // word number
+  var usz n = 0;  // word number
   var usz start = 0;
   var usz i = 0;
   for (; i < text.len; i += 1) {
@@ -35,7 +32,7 @@ fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
     if (start != i) {
       // reached end of current word
       var str word = text.slice(start, i);
-      buf.append(IndexedWord{.word = word, .index = n});
+      buf.append(IndexedWord(word, n));
       n += 1;
     }
     start = i + 1;
@@ -45,16 +42,31 @@ fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
     // save possible last word at the end of text
     // that has no whitespace after it
     var str word = text.slice(start, i);
-    buf.append(IndexedWord{.word = word, .index = n});
+    buf.append(IndexedWord(word, n));
   }
 
   return buf;
 }
 
-fn u64 find_best_cap_and_seed(chunk<IndexedWord> words) noexcept {
+struct CapSeedPair {
+  u64 seed;
+  usz cap;
+
+  bool ok;
+};
+
+fn CapSeedPair find_best_cap_and_seed(chunk<IndexedWord> words) noexcept {
   var usz cap = words.len << 1;
   cap = bits::upper_power_of_two(cast(u32, cap));
-  return cap;
+
+  var container::FlatMap<usz> m =
+      container::fit_into_flat_map<usz>(cap, cap - 1, words);
+
+  if (m.len == 0) {
+    return CapSeedPair{.seed = 0, .cap = 0, .ok = false};
+  }
+
+  return CapSeedPair{.seed = m.seed, .cap = cap, .ok = true};
 }
 
 fn i32 main(i32 argc, u8** argv) noexcept {
@@ -68,11 +80,24 @@ fn i32 main(i32 argc, u8** argv) noexcept {
   }
 
   var DynBuffer<IndexedWord> words = split_and_index_words(rr.data);
-  const u64 cap = find_best_cap_and_seed(words.head());
+  const CapSeedPair pair = find_best_cap_and_seed(words.head());
 
-  var u8 scratch[32] dirty;
+  if (!pair.ok) {
+    stdout_write_all(
+        macro_static_str("failed to pick cap and seed for given input\n"));
+    return 1;
+  }
+
+  var u8 scratch[256] dirty;
   var bb buf = bb(scratch, sizeof(scratch));
-  buf.fmt_dec(cap);
+  buf.write(macro_static_str("len  = "));
+  buf.fmt_dec(words.len());
+  buf.lf();
+  buf.write(macro_static_str("cap  = "));
+  buf.fmt_dec(pair.cap);
+  buf.lf();
+  buf.write(macro_static_str("seed = "));
+  buf.fmt_dec(pair.seed);
   buf.lf();
   stdout_write_all(buf.head());
   return 0;

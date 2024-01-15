@@ -12,6 +12,7 @@
 
 tmp
 temp
+coredump*
 
 *.lock
 *.tmp
