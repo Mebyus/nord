@@ -200,9 +200,9 @@ fn anyptr coven_linux_syscall_mmap(anyptr ptr,
 // First argument must be a null-terminated string with filename
 fn i32 coven_linux_syscall_open(const u8* s, u32 flags, u32 mode) noexcept;
 
-fn i32 coven_linux_syscall_read() noexcept;
+fn i32 coven_linux_syscall_read(u32 fd, u8* buf, usz len) noexcept;
 
-fn i32 coven_linux_syscall_close(i32 fd) noexcept;
+fn i32 coven_linux_syscall_close(u32 fd) noexcept;
 //
 }
 

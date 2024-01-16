@@ -230,11 +230,14 @@ fn void setup_draw_pipeline() noexcept {
   glDisable(GL_CULL_FACE);
 
   glViewport(0, 0, window_width, window_height);
-  glClearColor(0.2f, 0.2f, 0.0f, 1.0f);
+  glClearColor(0.2f, 0.05f, 0.0f, 1.0f);
 
   glClear(GL_DEPTH_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
   glUseProgram(gl_prog_handle);
+
+  const i32 offset_loc = glGetUniformLocation(gl_prog_handle, "pos_offset");
+  glUniform1f(offset_loc, 0.4f);
 }
 
 fn void draw() noexcept {

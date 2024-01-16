@@ -2,6 +2,7 @@
 .global coven_linux_syscall_exit
 .global coven_linux_syscall_mmap
 .global coven_linux_syscall_read
+.global coven_linux_syscall_close
 
 // Brief summary of syscall convetions on linux_amd64 platform
 //
@@ -20,6 +21,23 @@
 //
 // 4. Result of syscall execution is placed into rax register upon
 // syscall exit. Meaning of this result depends on particular syscall
+
+// Brief summary of C regular function calls conventions
+// on linux_amd64 platform
+//
+// 1. Generic integer (signed, unsigned and memory address) arguments
+// are placed into registers:
+//
+//  arg0 - rdi
+//  arg1 - rsi
+//  arg2 - rdx
+//  arg3 - rcx  <-- note the register difference vs r10 in syscalls
+//  arg4 - r8
+//  arg5 - r9
+//
+// 2. Caller does not expect that register values are preserved after
+// call exits. In other words callee may clobber registers and does not
+// have to restore them
 
 // fn open(s: *u8, flags: u32, mode: u32) => i32
 //
@@ -80,5 +98,29 @@ coven_linux_syscall_mmap:
     //  [fd]     => arg4 => r8
     //  [offset] => arg5 => r9
     mov $0x09, %rax
+    syscall
+    ret
+
+// fn read(fd: u32, buf: *u8, len: usz) => i32
+//
+//  [fd]  => rdi
+//  [buf] => rsi
+//  [len] => rdx
+coven_linux_syscall_read:
+    // All arguments are already set in place for syscall by function
+    // calling convention
+    //
+    // read syscall number => 0x0
+    //
+    //  [fd]  => arg0 => rdi
+    //  [buf] => arg1 => rsi
+    //  [len] => arg2 => rdx
+    xor %rax, %rax  // set rax to 0x0
+    syscall
+    ret
+
+// fn close(fd: u32) => i32
+coven_linux_syscall_close:
+    mov $0x03, %rax
     syscall
     ret
