@@ -190,17 +190,21 @@ extern "C" {
 
 [[noreturn]] fn void coven_linux_syscall_exit(i32 code) noexcept;
 
-fn anyptr coven_linux_syscall_mmap(anyptr ptr,
+fn anyptr coven_linux_syscall_mmap(uptr addr,
                                    usz len,
                                    i32 prot,
                                    i32 flags,
                                    i32 fd,
                                    i32 offset) noexcept;
 
+fn i32 coven_linux_syscall_munmap(uptr addr, usz len) noexcept;
+
 // First argument must be a null-terminated string with filename
 fn i32 coven_linux_syscall_open(const u8* s, u32 flags, u32 mode) noexcept;
 
 fn i32 coven_linux_syscall_read(u32 fd, u8* buf, usz len) noexcept;
+
+fn i32 coven_linux_syscall_write(u32 fd, const u8* buf, usz len) noexcept;
 
 fn i32 coven_linux_syscall_close(u32 fd) noexcept;
 //

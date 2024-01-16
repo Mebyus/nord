@@ -1,7 +1,9 @@
 .global coven_linux_syscall_open
 .global coven_linux_syscall_exit
 .global coven_linux_syscall_mmap
+.global coven_linux_syscall_munmap
 .global coven_linux_syscall_read
+.global coven_linux_syscall_write
 .global coven_linux_syscall_close
 
 // Brief summary of syscall convetions on linux_amd64 platform
@@ -48,7 +50,7 @@ coven_linux_syscall_open:
     // All arguments are already set in place for syscall by function
     // calling convention
     //
-    // open syscall number => 0x02
+    // open syscall number => 0x02 => rax
     //
     //  [s]     => arg0 => rdi
     //  [flags] => arg1 => rsi
@@ -67,14 +69,14 @@ coven_linux_syscall_exit:
     // thus we do not need to setup argument passing to syscall, because
     // it also accepts exit code in rdi register
     //
-    // exit syscall number => 0x3C
+    // exit syscall number => 0x3C => rax
     //
     //  [code] => arg0 => rdi 
 	mov 	$0x3C, %rax 
 	syscall
     // Ret instruction is not needed because exit terminates process execution
 
-// fn mmap(addr: anyptr, len: usz, prot: i32, flags: i32, fd: i32, offset: i32) => anyptr
+// fn mmap(addr: uptr, len: usz, prot: i32, flags: i32, fd: i32, offset: i32) => anyptr
 //
 //  [addr]   => rdi
 //  [len]    => rsi
@@ -89,7 +91,7 @@ coven_linux_syscall_mmap:
     // Move flags argument into syscall arg3 register (r10)
     mov %rcx, %r10
 
-    // mmap syscall number => 0x09
+    // mmap syscall number => 0x09 => rax
     //
     //  [addr]   => arg0 => rdi
     //  [len]    => arg1 => rsi
@@ -101,6 +103,23 @@ coven_linux_syscall_mmap:
     syscall
     ret
 
+// fn munmap(ptr: uptr, len: usz) => i32
+//
+//  [addr]   => rdi
+//  [len]    => rsi
+coven_linux_syscall_munmap:
+    // All arguments are already set in place for syscall by function
+    // calling convention
+    //
+    // munmap syscall number => 0x0B => rax
+    //
+    //  [addr]   => arg0 => rdi
+    //  [len]    => arg1 => rsi
+    mov $0x0B, %rax
+    syscall
+    ret
+
+
 // fn read(fd: u32, buf: *u8, len: usz) => i32
 //
 //  [fd]  => rdi
@@ -110,7 +129,7 @@ coven_linux_syscall_read:
     // All arguments are already set in place for syscall by function
     // calling convention
     //
-    // read syscall number => 0x0
+    // read syscall number => 0x0 => rax
     //
     //  [fd]  => arg0 => rdi
     //  [buf] => arg1 => rsi
@@ -119,8 +138,28 @@ coven_linux_syscall_read:
     syscall
     ret
 
+// fn write(fd: u32, buf: *u8, len: usz) => i32
+coven_linux_syscall_write:
+    // All arguments are already set in place for syscall by function
+    // calling convention
+    //
+    // write syscall number => 0x01 => rax
+    //
+    //  [fd]  => arg0 => rdi
+    //  [buf] => arg1 => rsi
+    //  [len] => arg2 => rdx
+    mov $0x01, %rax
+    syscall
+    ret
+
 // fn close(fd: u32) => i32
 coven_linux_syscall_close:
+    // All arguments are already set in place for syscall by function
+    // calling convention
+    //
+    // close syscall number => 0x03 => rax
+    //
+    //  [fd]  => arg0 => rdi
     mov $0x03, %rax
     syscall
     ret

@@ -2819,4 +2819,6 @@ struct Logger {
 
 };  // namespace coven::log
 
+fn extern "C" void coven_spin(u16 cycles) noexcept;
+
 #endif  // GUARD_CORE_HPP
