@@ -1,3 +1,7 @@
+SYS_EXIT = 0x3C
+
+.section .text
+
 .global coven_linux_syscall_open
 .global coven_linux_syscall_exit
 .global coven_linux_syscall_mmap
@@ -55,7 +59,7 @@ coven_linux_syscall_open:
     //  [s]     => arg0 => rdi
     //  [flags] => arg1 => rsi
     //  [mode]  => arg2 => rdx
-    mov $0x02, %rax
+    mov SYS_EXIT, %rax
     syscall
     ret
 
@@ -134,7 +138,9 @@ coven_linux_syscall_read:
     //  [fd]  => arg0 => rdi
     //  [buf] => arg1 => rsi
     //  [len] => arg2 => rdx
-    xor %rax, %rax  // set rax to 0x0
+    //
+    // set rax to 0x0
+    xor %rax, %rax
     syscall
     ret
 
