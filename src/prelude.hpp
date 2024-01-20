@@ -7,6 +7,9 @@
 #undef min
 #undef max
 #undef EOF
+#undef stdin
+#undef stdout
+#undef stderr
 
 // Modify function or constant to be bound to translation unit
 #define internal static

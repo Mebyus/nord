@@ -11,7 +11,7 @@ DEBUG_DIR = debug
 CC = g++
 
 CSTANDARD = 20
-OPTIMIZATION = 2
+OPTIMIZATION = fast
 
 # Preprocessor flags
 CPPFLAGS = -MMD -MP -MF
@@ -38,7 +38,7 @@ endif
 default: build
 
 .PHONY: build
-build: dirs info ${BIN_DIR}/nord ${BIN_DIR}/ins ${BIN_DIR}/flatfit mimic ${BIN_DIR}/game
+build: dirs info ${BIN_DIR}/nord ins flatfit mimic ${BIN_DIR}/game
 
 .PHONY: dirs
 dirs: ${BIN_DIR} ${CACHE_DIR}
@@ -52,6 +52,12 @@ mimic: ${BIN_DIR}/mimic
 
 .PHONY: math
 math: ${CACHE_DIR}/math.o
+
+.PHONY: ins
+ins: ${BIN_DIR}/ins
+
+.PHONY: flatfit
+flatfit: ${BIN_DIR}/flatfit
 
 ${BIN_DIR}:
 	@mkdir -p ${BIN_DIR}
@@ -68,7 +74,7 @@ ${BIN_DIR}/mimic: ${CACHE_DIR}/mimic.o
 ${BIN_DIR}/ins: ${CACHE_DIR}/input_sequence_inspect.o
 	@${CC} -o $@ $^
 
-${BIN_DIR}/flatfit: ${CACHE_DIR}/flat_fit.o
+${BIN_DIR}/flatfit: ${CACHE_DIR}/flat_fit.o ${CACHE_DIR}/syscall_linux_amd64.o
 	@${CC} -o $@ $^
 
 ${BIN_DIR}/game: ${CACHE_DIR}/game.o

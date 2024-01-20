@@ -1,0 +1,93 @@
+[
+    {
+        "name": "nord",
+        "kind": "executable",
+        "recipes": [
+            {
+                "target": {
+                    "os": "linux",
+                    "arch": "amd64"
+                },
+                "objects": [
+                    {
+                        "name": "main",
+                        "kind": "cpp",
+                        "parts": [
+                            "prelude.hpp",
+                            "core.hpp",
+                            "core_linux.cpp",
+                            "main.cpp"
+                        ],
+                        "ext_headers": [
+                            "ctype.h",
+                            "errno.h",
+                            "execinfo.h",
+                            "fcntl.h",
+                            "stdio.h",
+                            "stdlib.h",
+                            "string.h",
+                            "sys/ioctl.h",
+                            "sys/stat.h",
+                            "termios.h",
+                            "time.h",
+                            "unistd.h"
+                        ]
+                    },
+                    {
+                        "name": "platform",
+                        "kind": "asm",
+                        "parts": [
+                            "amd64.s",
+                            "syscall_linux_amd64.s"
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "ins",
+        "kind": "executable",
+        "recipes": [
+            {
+                "target": {
+                    "os": "linux",
+                    "arch": "amd64"
+                },
+                "objects": [
+                    {
+                        "name": "main",
+                        "kind": "c++",
+                        "parts": [
+                            "prelude.hpp",
+                            "core.hpp",
+                            "core_linux.cpp",
+                            "input_sequence_inspect.cpp"
+                        ],
+                        "ext_headers": [
+                            "ctype.h",
+                            "errno.h",
+                            "execinfo.h",
+                            "fcntl.h",
+                            "stdio.h",
+                            "stdlib.h",
+                            "string.h",
+                            "sys/ioctl.h",
+                            "sys/stat.h",
+                            "termios.h",
+                            "time.h",
+                            "unistd.h"
+                        ]
+                    },
+                    {
+                        "name": "platform",
+                        "kind": "asm",
+                        "parts": [
+                            "syscall_linux_amd64.s"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

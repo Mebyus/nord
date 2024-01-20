@@ -1,12 +1,25 @@
 #include <time.h>
 
-// namespace time
-// {
-//   fn void clock () {
-//     var struct timespec ts;
-//     clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &ts);
-//   }
-// } // namespace time
+namespace coven::time {
+
+fn u64 clock() noexcept {
+  var u32 hi;
+  var u32 lo;
+  var u32 id;
+
+  asm(R"(
+    rdtscp
+  )"
+      : "=d"(hi), "=a"(lo), "=c"(id));
+
+  // TODO: optimze weird mov %eax,%eax instruction in compiler output
+  var u64 r = hi;
+  r <<= 32;
+  r |= lo;
+  return r;
+}
+
+}  // namespace coven::time
 
 fn void copy(u8* src, u8* dst, usz n) noexcept {
   must(n != 0);
@@ -23,12 +36,8 @@ fn void move(u8* src, u8* dst, usz n) noexcept {
 }
 
 method void mc::clear() noexcept {
-  if (len <= 16) {
-    for (usz i = 0; i < len; i += 1) {
-      ptr[i] = 0;
-    }
-    return;
-  }
+  must(len != 0);
+  must(ptr != nil);
 
   memset(ptr, 0, len);
 }
@@ -217,7 +226,12 @@ struct KernelTimespec {
   i64 nano;
 };
 
-extern "C" fn i32 coven_linux_syscall_futex(u32 *addr, i32 op, u32 val, const KernelTimespec* timeout, u32 *addr2, u32 val3) noexcept;
+extern "C" fn i32 coven_linux_syscall_futex(u32* addr,
+                                            i32 op,
+                                            u32 val,
+                                            const KernelTimespec* timeout,
+                                            u32* addr2,
+                                            u32 val3) noexcept;
 
 struct CloneArgs {
   // Flags bit mask
@@ -256,17 +270,104 @@ struct CloneArgs {
 
 extern "C" fn i32 coven_linux_syscall_clone3(CloneArgs* args) noexcept;
 
+fn inline i32 close(u32 fd) noexcept {
+  return coven_linux_syscall_close(fd);
+}
+
 }  // namespace os::linux::syscall
 
 namespace os::linux {
 
-[[noreturn]] fn void abort() noexcept {
-  // hlt instruction can be executed by cpu only in privileged mode
-  //
-  // When invoked in userspace it will always produce cpu exception.
-  // By default the program will then crash and produce coredump
-  asm("hlt");
+internal const u32 stdin_fd = 0;
+internal const u32 stdout_fd = 1;
+internal const u32 stderr_fd = 2;
+
+}  // namespace os::linux
+
+namespace os {
+
+[[noreturn]] fn inline void crash() noexcept {
+  // Trap outputs special reserved instruction in machine code.
+  // Upon executing this instruction a cpu exception is generated
+  __builtin_trap();
   __builtin_unreachable();
 }
 
-}  // namespace os::linux
+fn fs::CloseResult close(fs::FileDescriptor fd) noexcept {
+  linux::syscall::close(cast(u32, fd));
+  return fs::CloseResult();
+}
+
+// Represents a one-way consumer of byte stream. Bytes can be written
+// to it, but cannot be read from
+//
+// This consumer is usually tied to some external resource (open file,
+// socket, pipe, network connection, etc.) and thus write operation can
+// result in error which is outside of current program control. From this
+// perspective encountering errors when interacting with this object is
+// considered normal behaviour and should not be treated by clients as
+// something extraordinary and unexpected. Instead errors produced on
+// writes should be checked and handled accordingly to their nature
+//
+// Note that this implementation does unbuffered writes. To make buffered
+// version use bufio::Writer
+struct Sink {
+  fs::FileDescriptor fd;
+
+  let Sink(fs::FileDescriptor fd) noexcept : fd(fd) {}
+
+  method fs::WriteResult write(mc c) noexcept { return fs::write(fd, c); }
+
+  method fs::WriteResult write_all(mc c) noexcept {
+    return fs::write_all(fd, c);
+  }
+
+  // A convenience wrapper of write_all method for clients which always
+  // assume that all bytes will be written from given input without errors.
+  //
+  // In practice method gives up as soon as it encounters first write error.
+  // No additional attempts to write the rest of input are made
+  method void print(str s) noexcept { write_all(s); }
+
+  method fs::CloseResult close() noexcept { return os::close(fd); }
+};
+
+var Sink raw_stdout = Sink(linux::stdout_fd);
+var Sink raw_stderr = Sink(linux::stderr_fd);
+
+internal const usz default_sink_buf_size = 1 << 13;
+
+var u8 stdout_buf[default_sink_buf_size];
+var u8 stderr_buf[default_sink_buf_size];
+
+var bufio::Writer<Sink> stdout =
+    bufio::Writer<Sink>(raw_stdout, mc(stdout_buf, default_sink_buf_size));
+var bufio::Writer<Sink> stderr =
+    bufio::Writer<Sink>(raw_stdout, mc(stdout_buf, default_sink_buf_size));
+
+// Represents a one-way producer of byte stream. Bytes can be read
+// from it, but cannot be written to
+//
+// This consumer is usually tied to some external resource (open file,
+// socket, pipe, network connection, etc.) and thus read operation can
+// result in error which is outside of current program control. From this
+// perspective encountering errors when interacting with this object is
+// considered normal behaviour and should not be treated by clients as
+// something extraordinary and unexpected. Instead errors produced on
+// reads should be checked and handled accordingly to their nature
+//
+// Note that this implementation does unbuffered reads. To make buffered
+// version use bufio::Reader
+struct Tap {
+  fs::FileDescriptor fd;
+
+  let Tap(fs::FileDescriptor fd) noexcept : fd(fd) {}
+
+  method fs::ReadResult read(mc c) noexcept { return fs::read(fd, c); }
+
+  method fs::ReadResult read_all(mc c) noexcept { return fs::read_all(fd, c); }
+};
+
+var Tap raw_stdin = Tap(linux::stdin_fd);
+
+}  // namespace os
