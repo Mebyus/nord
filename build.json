@@ -11,11 +11,12 @@
                 "objects": [
                     {
                         "name": "main",
-                        "kind": "cpp",
+                        "kind": "c++",
                         "parts": [
                             "prelude.hpp",
                             "core.hpp",
                             "core_linux.cpp",
+                            "lexer.cpp",
                             "main.cpp"
                         ],
                         "ext_headers": [

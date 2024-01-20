@@ -1,8 +1,3 @@
-#ifndef GUARD_CORE_HPP
-#define GUARD_CORE_HPP
-
-#include "prelude.hpp"
-
 // Small object that holds information about non-fatal error
 struct error {
   // Unique identifier of error origin location in code base
@@ -1086,6 +1081,22 @@ struct buffer {
 };
 
 namespace bits {
+
+fn inline constexpr u32 trailing_zeros(u32 x) noexcept {
+  if (x == 0) {
+    return 32;
+  }
+
+  return __builtin_ctz(x);
+}
+
+fn inline constexpr u64 trailing_zeros(u64 x) noexcept {
+  if (x == 0) {
+    return 64;
+  }
+
+  return __builtin_ctzl(x);
+}
 
 fn inline constexpr bool is_power_of_2(u32 x) noexcept {
   return (x & (x - 1)) == 0;
@@ -2923,5 +2934,3 @@ struct Writer {
 };
 
 }  // namespace bufio
-
-#endif  // GUARD_CORE_HPP

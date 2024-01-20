@@ -1,20 +1,3 @@
-#include <ctype.h>
-#include <errno.h>
-#include <execinfo.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <time.h>
-#include <unistd.h>
-
-#include "core.hpp"
-
-#include "core_linux.cpp"
-
 var coven::log::Logger lg;
 
 #define CTRL_KEY(k) ((k) & 0x1f)
@@ -511,8 +494,6 @@ struct FlatMap {
 };
 
 var internal FlatMap token_kind_map = FlatMap(256, 0xFF, FLAT_MAP_SEED);
-
-#include "lexer.cpp"
 
 fn DynBuffer<Token> tokenize_line(FlatMap* map, mc line) noexcept {
   if (line.is_nil()) {

@@ -59,6 +59,9 @@ ins: ${BIN_DIR}/ins
 .PHONY: flatfit
 flatfit: ${BIN_DIR}/flatfit
 
+.PHONY: floattest
+floattest: ${BIN_DIR}/floattest
+
 ${BIN_DIR}:
 	@mkdir -p ${BIN_DIR}
 
@@ -75,6 +78,9 @@ ${BIN_DIR}/ins: ${CACHE_DIR}/input_sequence_inspect.o
 	@${CC} -o $@ $^
 
 ${BIN_DIR}/flatfit: ${CACHE_DIR}/flat_fit.o ${CACHE_DIR}/syscall_linux_amd64.o
+	@${CC} -o $@ $^
+
+${BIN_DIR}/floattest: ${CACHE_DIR}/fmt_float_test.o ${CACHE_DIR}/syscall_linux_amd64.o
 	@${CC} -o $@ $^
 
 ${BIN_DIR}/game: ${CACHE_DIR}/game.o
@@ -103,6 +109,10 @@ ${CACHE_DIR}/game.o: src/game.cpp makefile
 ${CACHE_DIR}/math.o: src/math.cpp makefile
 	@${CC} ${CPPFLAGS} ${CACHE_DIR}/math.d ${CFLAGS} -o $@ -c $<
 -include ${CACHE_DIR}/math.d
+
+${CACHE_DIR}/fmt_float_test.o: src/fmt_float_test.cpp makefile
+	@${CC} ${CPPFLAGS} ${CACHE_DIR}/fmt_float_test.d ${CFLAGS} -o $@ -c $<
+-include ${CACHE_DIR}/fmt_float_test.d
 
 ${CACHE_DIR}/syscall_linux_amd64.o: src/syscall_linux_amd64.s
 	@as -o $@ $<

@@ -1,6 +1,3 @@
-#ifndef PRELUDE_CORE_HPP
-#define PRELUDE_CORE_HPP
-
 // Use only for comparison with pointer types
 #define nil 0
 
@@ -113,11 +110,3 @@ fn void copy(u8* src, u8* dst, usz n) noexcept;
 //
 // Guarantees correct behaviour for overlapping memory regions
 fn void move(u8* src, u8* dst, usz n) noexcept;
-
-// extern "C" {
-
-// fn anyptr malloc(usz n) noexcept;
-
-// }
-
-#endif  // PRELUDE_CORE_HPP

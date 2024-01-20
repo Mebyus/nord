@@ -1,5 +1,6 @@
 # build results
 /bin/
+/build/
 
 # build cache
 /cache/
