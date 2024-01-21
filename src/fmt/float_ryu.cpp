@@ -60,7 +60,7 @@ fn usz unsafe_dec_short(mc c, f32 x) noexcept {
         break;
     }
     }
-    exp += exp_bias;
+    exp += f32_exp_bias;
 
     // use ryu algorithm
 }

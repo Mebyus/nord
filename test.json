@@ -19,7 +19,8 @@
                             "prelude.hpp",
                             "core.hpp",
                             "core_linux.cpp",
-                            "fmt/float_ryu.cpp"
+                            "fmt/float_ryu.cpp",
+                            "gtf/gtf.cpp"
                         ],
                         "ext_headers": [
                             "ctype.h",

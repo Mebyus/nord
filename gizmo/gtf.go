@@ -173,9 +173,33 @@ func mergeTestFiles(outFilePath string, files []string, testFiles []string, incl
 		funcList = append(funcList, list...)
 	}
 
-	fmt.Println(funcList)
+	appendTestMainFunc(&buf, funcList)
 
 	return os.WriteFile(outFilePath, buf.Bytes(), 0o664)
+}
+
+func appendTestMainFunc(buf *bytes.Buffer, funcList []string) {
+	buf.WriteString("fn i32 main() noexcept {\n")
+	buf.WriteString("    var usz failed_tests_counter = 0;\n\n")
+
+	for _, funcFullName := range funcList {
+		buf.WriteString("    var coven::gtf::Test t = coven::gtf::Test(str(), macro_static_str(\"" + funcFullName + "\"));\n")
+		buf.WriteString("    " + funcFullName + "(t);\n")
+		buf.WriteString("    if (!t.is_ok()) {\n")
+		buf.WriteString("        failed_tests_counter += 1;\n")
+		buf.WriteString("        t.report();\n")
+		buf.WriteString("    }\n")
+		buf.WriteRune('\n')
+	}
+
+	buf.WriteString("    os::stdout.flush();\n")
+	buf.WriteRune('\n')
+	buf.WriteString("    if (failed_tests_counter != 0) {\n")
+	buf.WriteString("        return 1;\n")
+	buf.WriteString("    }\n")
+	buf.WriteRune('\n')
+	buf.WriteString("    return 0;\n")
+	buf.WriteString("}\n")
 }
 
 func appendTestFileContents(buf *bytes.Buffer, path string) (funcList []string, err error) {
