@@ -1,0 +1,50 @@
+[
+    {
+        "name": "ins",
+        "kind": "test",
+        "recipes": [
+            {
+                "target": {
+                    "os": "linux",
+                    "arch": "amd64"
+                },
+                "tests": [
+                    "fmt/float_ryu_test.cpp"
+                ],
+                "objects": [
+                    {
+                        "name": "main",
+                        "kind": "c++",
+                        "parts": [
+                            "prelude.hpp",
+                            "core.hpp",
+                            "core_linux.cpp",
+                            "fmt/float_ryu.cpp"
+                        ],
+                        "ext_headers": [
+                            "ctype.h",
+                            "errno.h",
+                            "execinfo.h",
+                            "fcntl.h",
+                            "stdio.h",
+                            "stdlib.h",
+                            "string.h",
+                            "sys/ioctl.h",
+                            "sys/stat.h",
+                            "termios.h",
+                            "time.h",
+                            "unistd.h"
+                        ]
+                    },
+                    {
+                        "name": "platform",
+                        "kind": "asm",
+                        "parts": [
+                            "syscall_linux_amd64.s"
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]

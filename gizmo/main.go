@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type BuildItem struct {
@@ -18,6 +20,7 @@ type BuildItem struct {
 
 type Recipe struct {
 	Target  Target       `json:"target"`
+	Tests   []string     `json:"tests"`
 	Objects []ObjectItem `json:"objects"`
 }
 
@@ -35,7 +38,21 @@ type ObjectItem struct {
 
 type BuildContext struct {
 	FilePath string
-	SaveDir  string
+
+	BinDir   string
+	CacheDir string
+
+	Config LocalBuildConfig
+}
+
+type LocalBuildConfig struct {
+	// List of build kinds:
+	//
+	//	- debug (debug-friendly optimizations + debug information in binaries + safety checks)
+	//	- test (moderate-level optimizations + debug information in binaries + safety checks)
+	//	- safe (most optimizations enabled + safety checks)
+	//	- fast (all optimizations enabled + safety checks disabled)
+	Kind string
 }
 
 const defaultBuildConfigFile = "build.json"
@@ -51,28 +68,46 @@ func main() {
 		fatal("no command specified")
 	}
 
-	if len(args) >= 1 && args[0] != "build" {
-		fatal("unknown command")
+	cmdName := args[0]
+	switch cmdName {
+	case "build":
+	case "test":
+		err := execTestCmd(args[1:])
+		if err != nil {
+			fatal("execute test: " + err.Error())
+		}
+	default:
+		fatal("unknown command: " + cmdName)
 	}
 
 	var buildTarget string
-	if len(args) == 2 {
+	if len(args) >= 2 {
 		buildTarget = args[1]
 	}
 
-	b, err := os.ReadFile(defaultBuildConfigFile)
+	var items []BuildItem
+	err := readConfigFromFile(defaultBuildConfigFile, &items)
 	if err != nil {
 		fatal(err)
 	}
 
-	var items []BuildItem
-	err = json.Unmarshal(b, &items)
-	if err != nil {
-		fatal(err)
+	localConfig := readLocalBuildConfig()
+
+	// verify local config
+	if localConfig.Kind == "" {
+		fatal("build kind cannot be empty")
 	}
+
+	switch localConfig.Kind {
+	case "debug", "test", "safe", "fast":
+	default:
+		fatal("unknown build kind: " + localConfig.Kind)
+	}
+
+	fmt.Println("build kind:", localConfig.Kind)
 
 	if buildTarget == "" {
-		err = BuildAll(items)
+		err = BuildAll(localConfig, items)
 		if err != nil {
 			fatal(err)
 		}
@@ -83,10 +118,72 @@ func main() {
 	if !ok {
 		fatal("build item not found")
 	}
-	err = Build(item)
+	err = Build(localConfig, item)
 	if err != nil {
 		fatal(err)
 	}
+}
+
+func readConfigFromFile(filename string, v any) error {
+	file, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	decoder := json.NewDecoder(file)
+	return decoder.Decode(v)
+}
+
+const defaultBuildKind = "debug"
+
+func readLocalBuildConfig() LocalBuildConfig {
+	cfg := LocalBuildConfig{
+		Kind: defaultBuildKind,
+	}
+
+	b, err := os.ReadFile(".build.env")
+	if err != nil {
+		// TODO: maybe spit some debug info about this error
+		return cfg
+	}
+
+	s := bufio.NewScanner(bytes.NewReader(b))
+	for s.Scan() {
+		line := s.Text()
+		line = strings.TrimSpace(line)
+		if line == "" {
+			// skip empty lines
+			continue
+		}
+		if strings.HasPrefix(line, "#") {
+			// skip line comments
+			continue
+		}
+
+		split := strings.Split(line, "=")
+		if len(split) != 2 {
+			// TODO: report suspicious lines in config
+			continue
+		}
+
+		name := strings.TrimSpace(split[0])
+		value := strings.TrimSpace(split[1])
+
+		switch name {
+		case "BUILD_KIND":
+			cfg.Kind = value
+		default:
+			// skip unknown config variables
+		}
+	}
+	err = s.Err()
+	if err != nil {
+		// TODO: maybe spit some debug info about this error
+		return cfg
+	}
+
+	return cfg
 }
 
 func findBuildItem(items []BuildItem, name string) (BuildItem, bool) {
@@ -98,9 +195,9 @@ func findBuildItem(items []BuildItem, name string) (BuildItem, bool) {
 	return BuildItem{}, false
 }
 
-func BuildAll(items []BuildItem) error {
+func BuildAll(cfg LocalBuildConfig, items []BuildItem) error {
 	for _, item := range items {
-		err := Build(item)
+		err := Build(cfg, item)
 		if err != nil {
 			return fmt.Errorf("build %s: %w", item.Name, err)
 		}
@@ -108,7 +205,7 @@ func BuildAll(items []BuildItem) error {
 	return nil
 }
 
-func Build(item BuildItem) error {
+func Build(cfg LocalBuildConfig, item BuildItem) error {
 	if len(item.Recipes) == 0 {
 		return fmt.Errorf("no recipe")
 	}
@@ -118,8 +215,12 @@ func Build(item BuildItem) error {
 		return fmt.Errorf("no objects in recipe")
 	}
 
-	ctx := BuildContext{SaveDir: filepath.Join("build", item.Name, "release/cache")}
-	err := os.MkdirAll(ctx.SaveDir, 0o775)
+	ctx := BuildContext{
+		BinDir:   filepath.Join("build", item.Name, cfg.Kind, "bin"),
+		CacheDir: filepath.Join("build", item.Name, cfg.Kind, "cache"),
+		Config:   cfg,
+	}
+	err := os.MkdirAll(ctx.CacheDir, 0o775)
 	if err != nil {
 		return err
 	}
@@ -127,7 +228,7 @@ func Build(item BuildItem) error {
 	objectsList := make([]string, 0, len(objectItems))
 	for _, objectItem := range objectItems {
 		objCtx := ctx
-		objCtx.FilePath = filepath.Join(ctx.SaveDir, objectItem.Name+".o")
+		objCtx.FilePath = filepath.Join(ctx.CacheDir, objectItem.Name+".o")
 		err := buildObject(objCtx, objectItem)
 		if err != nil {
 			return fmt.Errorf("build %s object %s: %w", objectItem.Kind, objectItem.Name, err)
@@ -136,8 +237,12 @@ func Build(item BuildItem) error {
 		objectsList = append(objectsList, objCtx.FilePath)
 	}
 
-	ctx = BuildContext{SaveDir: filepath.Join("build", item.Name, "release/bin")}
-	ctx.FilePath = filepath.Join(ctx.SaveDir, item.Name)
+	err = os.MkdirAll(ctx.BinDir, 0o775)
+	if err != nil {
+		return err
+	}
+
+	ctx.FilePath = filepath.Join(ctx.BinDir, item.Name)
 	return linkObjects(ctx, objectsList)
 }
 
@@ -164,7 +269,12 @@ func mergeSourceFiles(outFilePath string, files []string, includeHeaders []strin
 	buf.WriteRune('\n')
 
 	for _, file := range files {
-		err := appendFileContents(&buf, filepath.Join("src", file))
+		fullPath := filepath.Join("src", file)
+		buf.WriteString("// gizmo.file = ")
+		buf.WriteString(fullPath)
+		buf.WriteRune('\n')
+
+		err := appendFileContents(&buf, fullPath)
 		if err != nil {
 			return err
 		}
@@ -175,7 +285,32 @@ func mergeSourceFiles(outFilePath string, files []string, includeHeaders []strin
 }
 
 func linkObjects(ctx BuildContext, list []string) error {
-	return nil
+	args := make([]string, 0, 10+len(list))
+
+	switch ctx.Config.Kind {
+	case "debug":
+		args = append(args, optzFlag(debugCompilerOptimizations))
+		args = append(args, debugInfoFlag)
+	case "test":
+		args = append(args, optzFlag(testCompilerOptimizations))
+		args = append(args, debugInfoFlag)
+	case "safe":
+		args = append(args, optzFlag(safeCompilerOptimizations))
+	case "fast":
+		args = append(args, optzFlag(fastCompilerOptimizations))
+	default:
+		panic("unexpected build kind: " + ctx.Config.Kind)
+	}
+
+	args = append(args, "-o", ctx.FilePath)
+	args = append(args, list...)
+
+	// TODO: link external libraries
+
+	cmd := exec.Command(compiler, args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func buildObject(ctx BuildContext, item ObjectItem) error {
@@ -219,7 +354,10 @@ var genFlags = []string{
 
 const compiler = "g++"
 const compilerStdVersion = "20"
-const compilerOptimizations = "2"
+const debugCompilerOptimizations = "g"
+const testCompilerOptimizations = "1"
+const safeCompilerOptimizations = "2"
+const fastCompilerOptimizations = "fast"
 const debugInfoFlag = "-ggdb"
 
 var otherFlags = []string{
@@ -236,18 +374,33 @@ func optzFlag(v string) string {
 }
 
 func buildCppObject(ctx BuildContext, item ObjectItem) error {
-	genFilePath := filepath.Join(ctx.SaveDir, item.Name+".gen.cc")
+	genFilePath := filepath.Join(ctx.CacheDir, item.Name+".gen.cc")
 	err := mergeSourceFiles(genFilePath, item.Parts, item.ExtHeaders)
 	if err != nil {
 		return err
 	}
 
-	args := make([]string, 0, 2+len(genFlags)+len(warningFlags)+len(otherFlags)+len(item.Parts))
+	args := make([]string, 0, 10+len(genFlags)+len(warningFlags)+len(otherFlags)+len(item.Parts))
 	args = append(args, genFlags...)
 	args = append(args, warningFlags...)
 	args = append(args, otherFlags...)
 	args = append(args, stdFlag(compilerStdVersion))
-	args = append(args, debugInfoFlag)
+
+	switch ctx.Config.Kind {
+	case "debug":
+		args = append(args, optzFlag(debugCompilerOptimizations))
+		args = append(args, debugInfoFlag)
+	case "test":
+		args = append(args, optzFlag(testCompilerOptimizations))
+		args = append(args, debugInfoFlag)
+	case "safe":
+		args = append(args, optzFlag(safeCompilerOptimizations))
+	case "fast":
+		args = append(args, optzFlag(fastCompilerOptimizations))
+	default:
+		panic("unexpected build kind: " + ctx.Config.Kind)
+	}
+
 	args = append(args, "-o", ctx.FilePath)
 	args = append(args, "-c", genFilePath)
 
