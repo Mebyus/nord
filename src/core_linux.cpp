@@ -284,13 +284,6 @@ internal const u32 stderr_fd = 2;
 
 namespace os {
 
-[[noreturn]] fn inline void crash() noexcept {
-  // Trap outputs special reserved instruction in machine code.
-  // Upon executing this instruction a cpu exception is generated
-  __builtin_trap();
-  __builtin_unreachable();
-}
-
 fn fs::CloseResult close(fs::FileDescriptor fd) noexcept {
   linux::syscall::close(cast(u32, fd));
   return fs::CloseResult();

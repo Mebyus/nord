@@ -1,6 +1,6 @@
 #include "core.hpp"
 
-namespace math {
+namespace coven::math {
 
 const f32 pi_f32 = 3.14159265358979323846f;
 const f64 pi_f64 = 3.14159265358979323846;

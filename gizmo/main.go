@@ -76,6 +76,7 @@ func main() {
 		if err != nil {
 			fatal("execute test: " + err.Error())
 		}
+		return
 	default:
 		fatal("unknown command: " + cmdName)
 	}

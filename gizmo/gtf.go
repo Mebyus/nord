@@ -76,6 +76,7 @@ func execTest(item BuildItem) error {
 	ctx := BuildContext{
 		BinDir:   filepath.Join("build", item.Name+".test", "bin"),
 		CacheDir: filepath.Join("build", item.Name+".test", "cache"),
+		Config:   LocalBuildConfig{Kind: "debug"},
 	}
 	err := os.MkdirAll(ctx.CacheDir, 0o775)
 	if err != nil {
@@ -104,8 +105,17 @@ func execTest(item BuildItem) error {
 		return err
 	}
 
-	ctx.FilePath = filepath.Join(ctx.BinDir, item.Name)
-	return linkObjects(ctx, objectsList)
+	testExecPath := filepath.Join(ctx.BinDir, item.Name)
+	ctx.FilePath = testExecPath
+	err = linkObjects(ctx, objectsList)
+	if err != nil {
+		return err
+	}
+
+	cmd := exec.Command(testExecPath)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
 }
 
 func buildTestMainObject(ctx BuildContext, item ObjectItem, testFilenames []string) error {

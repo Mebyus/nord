@@ -37,7 +37,7 @@ struct Test {
     // Print out test result. That is test location and name
     // as well as status (passed or failed) and recorded error
     method void report() noexcept {
-        os::stdout.println(macro_static_str("[FAIL] "));
+        os::stdout.print(macro_static_str("[FAIL] "));
         os::stdout.print(file);
         os::stdout.print(macro_static_str(" # "));
         os::stdout.println(name);
