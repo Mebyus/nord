@@ -6,4 +6,4 @@ fn inline void spin(u16 cycles) noexcept {
   coven_sync_spin(cycles);
 }
 
-}  // namespace sync
+}  // namespace coven::sync

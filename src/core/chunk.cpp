@@ -30,6 +30,7 @@ struct mc {
 
   u8& operator[](uarch i) {
     must(i < len);
+    must(ptr != nil);
 
     return ptr[i];
   }
@@ -146,6 +147,24 @@ struct mc {
   }
 };
 
+method void mc::clear() noexcept {
+  must(len != 0);
+  must(ptr != nil);
+
+  for (uarch i = 0; i < len; i += 1) {
+    ptr[i] = 0;
+  }
+}
+
+method void mc::fill(u8 x) noexcept {
+  must(len != 0);
+  must(ptr != nil);
+
+  for (uarch i = 0; i < len; i += 1) {
+    ptr[i] = x;
+  }
+}
+
 // Alias for code documentation of intented memory chunk meaning
 //
 // String type indicates that bytes stored in chunk should (but may not)
@@ -180,6 +199,154 @@ struct chunk {
   method usz size() const noexcept { return chunk_size(T, len); }
 
   method void clear() noexcept { as_mc().clear(); }
+};
+
+// C String
+//
+// Represents a sequence of bytes in which the last byte always equals
+// zero. Designed for interfacing with traditional C-style strings
+struct cstr {
+  // Pointer to first byte in string
+  u8* ptr;
+
+  // Number of bytes in string before zero terminator byte
+  //
+  // Thus actual number of stored bytes available through
+  // pointer is len + 1
+  usz len;
+
+  let cstr() noexcept : ptr(nil), len(0) {}
+
+  // This constructor is deliberately unsafe. Use it only
+  // on C strings which come from trusted source
+  //
+  // For safe version with proper error-checking refer to
+  // function try_parse_cstr
+  let cstr(u8* s) noexcept {
+    var usz i = 0;
+    while (s[i] != 0) {
+      i += 1;
+    }
+    ptr = s;
+    len = i;
+  }
+
+  // Use this constructor if length of C string is already
+  // known before the call. Second argument is number of
+  // bytes in string, not including zero terminator
+  let cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
+
+  method bool is_nil() const noexcept { return len == 0; }
+
+  // Returns memory chunk with stored bytes. Zero terminator
+  // is not included
+  method str as_str() const noexcept { return str(ptr, len); }
+
+  // Returns memory chunk with stored bytes. Includes zero terminator
+  // in its length
+  method mc with_null() const noexcept { return mc(ptr, len + 1); }
+};
+
+// Buffer for storing elements (of the same type) in continuous memory region
+// which allows appending new elements to the end of buffer until buffer
+// capacity is reached
+template <typename T>
+struct buffer {
+  // Pointer to buffer starting position
+  T* ptr;
+
+  // Number of elements stored in buffer
+  usz len;
+
+  // Buffer capacity i.e. maximum number of elements it can hold
+  usz cap;
+
+  let constexpr buffer() noexcept : ptr(nil), len(0), cap(0) {}
+
+  let buffer(chunk<T> c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
+
+  let buffer(T* p, usz n) noexcept : ptr(p), len(0), cap(n) {}
+
+  method bool is_empty() const noexcept { return len == 0; }
+
+  method bool is_full() const noexcept { return len == cap; }
+
+  method bool is_nil() const noexcept { return cap == 0; }
+
+  // Returns number of elements which can be appended to buffer before it is
+  // full
+  method usz rem() const noexcept { return cap - len; }
+
+  method void reset() noexcept { len = 0; }
+
+  // Returns chunk which is occupied by actual data
+  // inside buffer
+  method chunk<T> head() const noexcept { return chunk<T>(ptr, len); }
+
+  // Append new element to buffer tail
+  method usz append(T elem) noexcept {
+    if (is_full()) {
+      return 0;
+    }
+
+    unsafe_append(elem);
+    return 1;
+  }
+
+  method void unsafe_append(T elem) noexcept {
+    ptr[len] = elem;
+    len += 1;
+  }
+
+  // Insert single element at specified index. All active elements with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i <= len < cap
+  //
+  // In the special case of i == len new element will be appended
+  // at the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_insert(usz i, T x) noexcept {
+    if (i == len) {
+      unsafe_append(x);
+      return;
+    }
+
+    move(cast(u8*, ptr + i), cast(u8*, ptr + i + 1), (len - i) * sizeof(T));
+    len += 1;
+    ptr[i] = x;
+  }
+
+  // Remove single element at specified index. All active elements with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i < len <= cap
+  // (hence length must be at least 1)
+  //
+  // In the special case of i == len - 1 single element will be popped
+  // from the tip of buffer
+  //
+  // This method does not perform any safety checks
+  method void unsafe_remove(usz i) noexcept {
+    if (i == len - 1) {
+      len -= 1;
+      return;
+    }
+
+    move(cast(u8*, ptr + i + 1), cast(u8*, ptr + i), (len - i - 1) * sizeof(T));
+    len -= 1;
+  }
+
+  method chunk<T> body() const noexcept { return chunk<T>(ptr, cap); }
 };
 
 } // namespace coven

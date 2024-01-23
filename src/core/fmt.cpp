@@ -389,4 +389,239 @@ fn uarch unsafe_mc(mc c, mc t) noexcept {
   return len;
 }
 
+// Bytes Buffer
+//
+// Convenience structure that can be used for storing multiple
+// consecutive writes and various formatting results together
+//
+// Accumulates multiple writes into single continuous memory region.
+// Buffer has capacity i.e. maximum number of bytes it can hold. After
+// number of written bytes reaches this maximum all subsequent writes
+// will write nothing and always return 0, until reset() is called
+//
+// Buffer is much alike memory chunk in terms of memory ownership
+struct Buffer {
+  // Pointer to first byte in underlying chunk
+  u8* ptr;
+
+  // Number of bytes currently stored in buffer
+  uarch len;
+
+  // Buffer capacity i.e. maximum number of bytes it can hold
+  uarch cap;
+
+  let constexpr Buffer() noexcept : ptr(nil), len(0), cap(0) {}
+
+  let Buffer(mc c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
+
+  let Buffer(u8* bytes, uarch n) noexcept : ptr(bytes), len(0), cap(n) {}
+
+  method bool is_empty() const noexcept { return len == 0; }
+
+  method bool is_full() const noexcept { return len == cap; }
+
+  method bool is_nil() const noexcept { return cap == 0; }
+
+  // Returns number of bytes which can be written to buffer before it is full
+  method uarch rem() const noexcept { return cap - len; }
+
+  method void reset() noexcept { len = 0; }
+
+  // Returns pointer to first byte at buffer position
+  method u8* tip() const noexcept { return ptr + len; }
+
+  method uarch write(u8* bytes, uarch n) noexcept {
+    var uarch w = min(n, rem());
+    if (w == 0) {
+      return 0;
+    }
+    copy(bytes, tip(), w);
+    len += w;
+    return w;
+  }
+
+  method uarch write(u8 b) noexcept {
+    if (is_full()) {
+      return 0;
+    }
+    ptr[len] = b;
+    len += 1;
+    return 1;
+  }
+
+  // add line feed (aka "newline") character to buffer
+  method uarch lf() noexcept { return write('\n'); }
+
+  method uarch write(mc c) noexcept { return write(c.ptr, c.len); }
+
+  // Write specified byte repeated n times to memory chunk
+  method uarch write_repeat(uarch n, u8 x) noexcept {
+    var mc t = tail();
+    const uarch k = t.write_repeat(n, x);
+    len += k;
+    return k;
+  }
+
+  method void unsafe_write_repeat(uarch n, u8 x) noexcept {
+    var mc t = tail();
+    t.unsafe_write_repeat(n, x);
+    len += n;
+  }
+
+  method uarch unsafe_write(mc c) noexcept {
+    copy(c.ptr, tip(), c.len);
+    len += c.len;
+    return c.len;
+  }
+
+  // Use for writing character literals like this
+  //
+  // buf.unsafe_write('L');
+  method void unsafe_write(char x) noexcept { unsafe_write(cast(u8, x)); }
+
+  method void unsafe_write(u8 x) noexcept {
+    ptr[len] = x;
+    len += sizeof(u8);
+  }
+
+  method void unsafe_write(i16 x) noexcept {
+    var i16* p = cast(i16*, tip());
+    *p = x;
+    len += sizeof(i16);
+  }
+
+  method void unsafe_write(f32 x) noexcept {
+    var f32* p = cast(f32*, tip());
+    *p = x;
+    len += sizeof(f32);
+  }
+
+  // Insert single byte at specified index. All active bytes with
+  // greater or equal indices will be shifted by one position
+  // to the right. This operation increases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i <= len < cap
+  //
+  // In the special case of i == len new byte will be appended
+  // at the tip of buffer
+  //
+  // This method does not perform any safety checks. This operation
+  // is relatively expensive as it involves moving buffer tail memory
+  // chunk to create the gap
+  method void unsafe_insert(uarch i, u8 x) noexcept {
+    if (i == len) {
+      unsafe_write(x);
+      return;
+    }
+
+    move(ptr + i, ptr + i + 1, len - i);
+    len += 1;
+    ptr[i] = x;
+  }
+
+  // Remove single byte at specified index. All active bytes with
+  // greater indices will be shifted by one position to the left.
+  // This operation decreases buffer length by 1
+  //
+  // For correct behaviour the following inequation must be
+  // satisfied before the call:
+  //
+  // i < len <= cap
+  // (hence length must be at least 1)
+  //
+  // In the special case of i == len - 1 single byte will be popped
+  // from the tip of buffer
+  //
+  // This method does not perform any safety checks. This operation
+  // is relatively expensive as it involves moving buffer tail memory
+  // chunk to remove the gap
+  method void unsafe_remove(uarch i) noexcept {
+    if (i == len - 1) {
+      len -= 1;
+      return;
+    }
+
+    move(ptr + i + 1, ptr + i, len - i - 1);
+    len -= 1;
+  }
+
+  method uarch dec(u8 x) noexcept {
+    const uarch n = dec(tail(), x);
+    len += n;
+    return n;
+  }
+
+  // overload for convenient usage with sizeof() results
+  method uarch dec(unsigned long int x) noexcept {
+    const uarch n = dec(tail(), cast(u32, x));
+    len += n;
+    return n;
+  }
+
+  method uarch dec(u16 x) noexcept {
+    const uarch n = dec(tail(), x);
+    len += n;
+    return n;
+  }
+
+  method uarch dec(u32 x) noexcept {
+    const uarch n = dec(tail(), x);
+    len += n;
+    return n;
+  }
+
+  method uarch unsafe_fmt_dec(u32 x) noexcept {
+    return unsafe_fmt_dec(cast(u64, x));
+  }
+
+  method uarch unsafe_fmt_dec(u64 x) noexcept {
+    var mc t = tail();
+    var uarch w = t.unsafe_fmt_dec(x);
+    len += w;
+    return w;
+  }
+
+  method uarch fmt_dec(u64 x) noexcept {
+    if (is_full()) {
+      return 0;
+    }
+
+    var mc t = tail();
+    var uarch w = t.fmt_dec(x);
+    len += w;
+    return w;
+  }
+
+  method uarch fmt_dec(i64 x) noexcept {
+    var mc t = tail();
+    if (t.is_nil()) {
+      return 0;
+    }
+    var uarch w = t.fmt_dec(x);
+    len += w;
+    return w;
+  }
+
+  method uarch fmt_bin_delim(u32 x) noexcept {
+    var mc t = tail();
+    var uarch w = t.fmt_bin_delim(x);
+    len += w;
+    return w;
+  }
+
+  // Returns memory chunk which is occupied by actual data
+  // inside buffer
+  method mc head() const noexcept { return mc(ptr, len); }
+
+  // Returns memory chunk which is a portion of buffer
+  // that is available for writes
+  method mc tail() const noexcept { return mc(tip(), rem()); }
+
+  // Returns full body (from zero to capacity) of buffer
+  method mc body() const noexcept { return mc(ptr, cap); }
+};
+
 } // namespace coven::fmt

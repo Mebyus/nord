@@ -1,6 +1,6 @@
 namespace coven::mem {
 
-fn void copy(u8* noalias src, u8* noalias dst, uarch n) noexcept {
+fn void copy(u8* restrict src, u8* restrict dst, uarch n) noexcept {
   must(n != 0);
   must(src != 0);
   must(dst != 0);
@@ -11,7 +11,7 @@ fn void copy(u8* noalias src, u8* noalias dst, uarch n) noexcept {
   }
 }
 
-fn void move(u8* noalias src, u8* dst, iarch n) noexcept {
+fn void move(u8* restrict src, u8* dst, iarch n) noexcept {
   must(n != 0);
   must(src != 0);
   must(dst != 0);
@@ -57,13 +57,13 @@ struct Arena {
   //
   // Returns allocated memory chunk. Note that its length
   // may be bigger than number of bytes requested
-  method mc alloc(usz n) noexcept {
+  method mc alloc(uarch n) noexcept {
     must(n != 0);
 
     n = bits::align_by_16(n);
     must(n <= rem());
 
-    const usz prev = pos;
+    const uarch prev = pos;
     pos += n;
 
     return buf.slice(prev, pos);

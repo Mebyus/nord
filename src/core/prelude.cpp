@@ -15,7 +15,7 @@
 #define global static
 #define persist static
 
-#define noalias __restrict__
+#define restrict __restrict__
 
 // Mark function declaration and definition
 #define fn
@@ -135,12 +135,12 @@ namespace coven::mem {
 // must be greater than zero
 //
 // Do not use for overlapping memory regions. 
-fn void copy(u8* noalias src, u8* noalias dst, uarch n) noexcept;
+fn void copy(u8* restrict src, u8* restrict dst, uarch n) noexcept;
 
 // Copies n bytes of memory from src to dst. Number of copied bytes
 // must be greater than zero
 //
 // Guarantees correct behaviour for overlapping memory regions
-fn void move(u8* noalias src, u8* dst, iarch n) noexcept;
+fn void move(u8* restrict src, u8* dst, iarch n) noexcept;
 
 } // namespace coven::mem
