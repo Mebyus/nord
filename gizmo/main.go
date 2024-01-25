@@ -296,8 +296,10 @@ func linkObjects(ctx BuildContext, list []string) error {
 		args = append(args, optzFlag(testCompilerOptimizations))
 		args = append(args, debugInfoFlag)
 	case "safe":
+		args = append(args, "-flto")
 		args = append(args, optzFlag(safeCompilerOptimizations))
 	case "fast":
+		args = append(args, "-flto")
 		args = append(args, optzFlag(fastCompilerOptimizations))
 	default:
 		panic("unexpected build kind: " + ctx.Config.Kind)
@@ -351,6 +353,7 @@ var warningFlags = []string{
 var genFlags = []string{
 	"-fwrapv",
 	"-fno-exceptions",
+	"-fno-rtti",
 }
 
 const compiler = "g++"

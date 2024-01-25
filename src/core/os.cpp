@@ -16,4 +16,10 @@ fn mc alloc_pages(uarch n) noexcept;
 // function
 fn void free_pages(mc c) noexcept;
 
+// Create with default permissions or truncate and open existing
+// regular file
+//
+// For implementation look into source file dedicated to specific OS
+fn io::OpenResult create(str path) noexcept;
+
 } // namespace coven::os

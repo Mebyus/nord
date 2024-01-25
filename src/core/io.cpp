@@ -1,5 +1,7 @@
 namespace coven::io {
 
+typedef uarch FileHandle;
+
 struct OpenResult {
   enum struct Code : u8 {
     Ok = 0,
@@ -12,12 +14,33 @@ struct OpenResult {
     AlreadyExists,
   };
 
-  FileDescriptor fd;
+  FileHandle fd;
 
   Code code;
 
-  let OpenResult(FileDescriptor f) noexcept : fd(f), code(Code::Ok) {}
+  let OpenResult(FileHandle f) noexcept : fd(f), code(Code::Ok) {}
   let OpenResult(Code c) noexcept : fd(0), code(c) {}
+
+  method bool is_ok() const noexcept { return code == Code::Ok; }
+  method bool is_err() const noexcept { return code != Code::Ok; }
+};
+
+struct MkdirResult {
+  enum struct Code : u8 {
+    Ok = 0,
+
+    // Generic error, no specifics known
+    Error,
+
+    PathTooLong,
+
+    AlreadyExists,
+  };
+
+  Code code;
+
+  let MkdirResult(FileHandle f) noexcept : fd(f), code(Code::Ok) {}
+  let MkdirResult(Code c) noexcept : fd(0), code(c) {}
 
   method bool is_ok() const noexcept { return code == Code::Ok; }
   method bool is_err() const noexcept { return code != Code::Ok; }
@@ -31,6 +54,11 @@ struct CloseResult {
 
     // Generic error, no specifics known
     Error,
+
+    InvalidHandle,
+    InputOutputError,
+    NoSpaceLeftOnDevice,
+    DiskQuotaExceeded,
   };
 
   Code code;
@@ -42,7 +70,7 @@ struct CloseResult {
   method bool is_err() const noexcept { return code != Code::Ok; }
 };
 
-fn CloseResult close(FileDescriptor fd) noexcept;
+fn CloseResult close(FileHandle fd) noexcept;
 
 struct ReadResult {
   enum struct Code : u8 {
@@ -117,9 +145,9 @@ struct WriteResult {
   method bool is_err() const noexcept { return code != Code::Ok; }
 };
 
-fn ReadResult read(FileDescriptor fd, mc c) noexcept;
+fn ReadResult read(FileHandle fd, mc c) noexcept;
 
-fn ReadResult read_all(FileDescriptor fd, mc c) noexcept {
+fn ReadResult read_all(FileHandle fd, mc c) noexcept {
   var uarch i = 0;
   while (i < c.len) {
     const ReadResult r = read(fd, c.slice_from(i));
@@ -133,9 +161,9 @@ fn ReadResult read_all(FileDescriptor fd, mc c) noexcept {
   return ReadResult(c.len);
 }
 
-fn WriteResult write(FileDescriptor fd, mc c) noexcept;
+fn WriteResult write(FileHandle fd, mc c) noexcept;
 
-fn WriteResult write_all(FileDescriptor fd, mc c) noexcept {
+fn WriteResult write_all(FileHandle fd, mc c) noexcept {
   var uarch i = 0;
   while (i < c.len) {
     const WriteResult r = write(fd, c.slice_from(i));

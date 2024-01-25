@@ -4,14 +4,74 @@ internal const u32 stdin_fd = 0;
 internal const u32 stdout_fd = 1;
 internal const u32 stderr_fd = 2;
 
+fn inline io::OpenResult open(cstr path, u32 flags, u32 mode) noexcept {
+  var syscall::Result r dirty;
+  do {
+    r = syscall::open(path.ptr, flags, mode);
+  } while (r.err == syscall.EINTR);
+
+  if (r.is_ok()) {
+    return io::OpenResult(r.val);
+  }
+
+  // dispatch error
+}
+
+fn inline io::CloseResult::Code dispatch_close_error(syscall::Error err) noexcept {
+  switch (err) {
+  case syscall::Error::EBADF: 
+    // Not a valid open file descriptor.
+    return io::CloseResult::Code::InvalidHandle;
+
+  case syscall::Error::EIO:
+    // An I/O error occurred.
+    return io::CloseResult::Code::InputOutputError;
+
+  // ENOSPC, EDQUOT
+  // On NFS, these errors are not normally reported against the first write
+  // which exceeds the available storage space, but instead against
+  // a subsequent write, fsync, or close
+  case syscall::Error::ENOSPC:
+    return io::CloseResult::Code::NoSpaceLeftOnDevice;
+  case syscall::Error::EDQUOT:
+    return io::CloseResult::Code::DiskQuotaExceeded;
+
+  default:
+    // Unknown error code
+    return io::CloseResult::Code::Error;
+  }
+}
+
+fn io::CloseResult close(io::FileHandle handle) noexcept {
+  var syscall::Result r dirty;
+  do {
+    r = syscall::close(cast(u32, handle));
+  } while (r.err == syscall.EINTR);
+
+  if (r.is_ok()) {
+    return io::CloseResult();
+  }
+
+  return io::CloseResult(dispatch_close_error(r.err));
+}
+
+fn io::ReadResult read(io::FileHandle handle, mc buf) noexcept {
+  // TODO: check too large buffer size (at most 0x7ffff000)
+  var syscall::Result r dirty;
+  do {
+    r = syscall::read(handle, buf.ptr, buf.len);
+  } while (r.err == syscall.EINTR);
+
+  if (r.is_ok()) {
+    return io::ReadResult(r.val);
+  }
+
+  // dispatch error
+}
+
 }  // namespace coven::os::linux
 
 namespace coven::os {
-
-fn fs::CloseResult close(fs::FileDescriptor fd) noexcept {
-  linux::syscall::close(cast(u32, fd));
-  return fs::CloseResult();
-}
 
 // Represents a one-way consumer of byte stream. Bytes can be written
 // to it, but cannot be read from
@@ -27,9 +87,9 @@ fn fs::CloseResult close(fs::FileDescriptor fd) noexcept {
 // Note that this implementation does unbuffered writes. To make buffered
 // version use bufio::Writer
 struct Sink {
-  fs::FileDescriptor fd;
+  fs::FileHandle fd;
 
-  let Sink(fs::FileDescriptor fd) noexcept : fd(fd) {}
+  let Sink(fs::FileHandle fd) noexcept : fd(fd) {}
 
   method fs::WriteResult write(mc c) noexcept { return fs::write(fd, c); }
 
@@ -74,9 +134,9 @@ var bufio::Writer<Sink> stderr =
 // Note that this implementation does unbuffered reads. To make buffered
 // version use bufio::Reader
 struct Tap {
-  fs::FileDescriptor fd;
+  fs::FileHandle fd;
 
-  let Tap(fs::FileDescriptor fd) noexcept : fd(fd) {}
+  let Tap(fs::FileHandle fd) noexcept : fd(fd) {}
 
   method fs::ReadResult read(mc c) noexcept { return fs::read(fd, c); }
 
@@ -84,5 +144,9 @@ struct Tap {
 };
 
 var Tap raw_stdin = Tap(linux::stdin_fd);
+
+fn io::OpenResult create(str path) noexcept {
+
+}
 
 }  // namespace coven::os
