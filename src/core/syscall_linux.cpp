@@ -270,38 +270,6 @@ fn inline Result close(u32 fd) noexcept {
   return Result(err);
 }
 
-fn io::OpenResult::Code dispatch_open_error(u32 error_code) noexcept {
-  switch (error_code) {
-  case ErrorCode::EACCES:
-  case ErrorCode::EBUSY:
-  case ErrorCode::EDQUOT:
-  case ErrorCode::EEXIST:
-  case ErrorCode::EFAULT:
-  case ErrorCode::EFBIG:
-  case ErrorCode::EINTR:
-  case ErrorCode::EINVAL:
-  case ErrorCode::EISDIR:
-  case ErrorCode::ELOOP:
-  case ErrorCode::EMFILE:
-  case ErrorCode::ENAMETOOLONG:
-  case ErrorCode::ENFILE:
-  case ErrorCode::ENODEV:
-  case ErrorCode::ENOENT:
-  case ErrorCode::ENOMEM:
-  case ErrorCode::ENOSPC:
-  case ErrorCode::ENOTDIR:
-  case ErrorCode::ENXIO:
-  case ErrorCode::EOPNOTSUPP:
-  case ErrorCode::EOVERFLOW:
-  case ErrorCode::EPERM:
-  case ErrorCode::EROFS:
-  case ErrorCode::ETXTBSY:
-  case ErrorCode::EWOULDBLOCK:
-  default:
-    return io::OpenResult::Code::Error;
-  }
-}
-
 fn inline io::FileHandle create_file_handle(i32 fd) noexcept {
   return io::OpenResult(cast(io::FileHandle, x));
 }
@@ -595,6 +563,34 @@ fn inline Result open(const u8* path, u32 flags, u32 mode) noexcept {
   return Result(err);
 }
 
+
+      //  EAGAIN The file descriptor fd refers to a file other than a socket and has been marked nonblocking (O_NONBLOCK),  and  the  read  would  block.   See
+      //         open(2) for further details on the O_NONBLOCK flag.
+
+      //  EAGAIN or EWOULDBLOCK
+      //         The  file descriptor fd refers to a socket and has been marked nonblocking (O_NONBLOCK), and the read would block.  POSIX.1-2001 allows either
+      //         error to be returned for this case, and does not require these constants to have the same value, so a portable application  should  check  for
+      //         both possibilities.
+
+      //  EBADF  fd is not a valid file descriptor or is not open for reading.
+
+      //  EFAULT buf is outside your accessible address space.
+
+      //  EINTR  The call was interrupted by a signal before any data was read; see signal(7).
+
+      //  EINVAL fd  is  attached to an object which is unsuitable for reading; or the file was opened with the O_DIRECT flag, and either the address specified
+      //         in buf, the value specified in count, or the file offset is not suitably aligned.
+
+      //  EINVAL fd was created via a call to timerfd_create(2) and the wrong size buffer was given to read(); see timerfd_create(2) for further information.
+
+      //  EIO    I/O error.  This will happen for example when the process is in a background process group, tries to read from its controlling  terminal,  and
+      //         either it is ignoring or blocking SIGTTIN or its process group is orphaned.  It may also occur when there is a low-level I/O error while read‐
+      //         ing from a disk or tape.  A further possible cause of EIO on networked filesystems is when an advisory lock had been taken out on the file de‐
+      //         scriptor and this lock has been lost.  See the Lost locks section of fcntl(2) for further details.
+
+      //  EISDIR fd refers to a directory.
+
+      //  Other errors may occur, depending on the object connected to fd.
 fn inline Result read(u32 fd, u8* buf, usz len) noexcept {
   const i32 r = coven_linux_syscall_read(fd, buf, len);
   if (r >= 0) {

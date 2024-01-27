@@ -576,23 +576,6 @@ struct DynBuffer {
   method chunk<T> head() const noexcept { return buf.head(); }
 };
 
-// Copies entire memory chunk from source into destination and
-// adds null terminator at the the end. Resulting C string in
-// destination memory chunk will occupy exactly source length + 1
-// bytes. Destination must have enough space to hold that much
-// data
-//
-// Returns C string structure which borrows memory from destination
-fn cstr unsafe_copy_as_cstr(str src, mc dst) noexcept {
-  must(dst.len >= src.len + 1);
-
-  dst.unsafe_write(src);
-  dst.ptr[src.len] = 0;
-  return cstr(dst.ptr, src.len);
-}
-
-#define macro_static_cstr(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
-
 
 
 

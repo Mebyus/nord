@@ -18,42 +18,42 @@ struct Writer {
 
   // Create a buffered writer from a given writer and a supplied
   // buffer. Buffer is used as long as writer lives
-  let Writer(T w, mc c) noexcept : buf(bb(c)), w(w) { 
+  let Writer(T writer, mc buf) noexcept : buf(bb(buf)), w(writer) { 
     must(c.len != 0);
     must(c.ptr != nil);
   }
 
-  method fs::WriteResult write(mc c) noexcept {
+  method io::WriteResult write(mc c) noexcept {
     if (c.len == 0) {
-      return fs::WriteResult();
+      return io::WriteResult();
     }
-    const usz n = buf.write(c);
+    const uarch n = buf.write(c);
     if (n != 0) {
-      return fs::WriteResult(n);
+      return io::WriteResult(n);
     }
 
-    const fs::WriteResult r = flush();
+    const io::WriteResult r = flush();
     if (r.is_err()) {
-      return fs::WriteResult(fs::WriteResult::Code::Flush, n);
+      return io::WriteResult(io::WriteResult::Code::Flush, n);
     }
-    const usz n2 = buf.write(c);
-    return fs::WriteResult(n2);
+    const uarch n2 = buf.write(c);
+    return io::WriteResult(n2);
   }
 
-  method fs::WriteResult write_all(mc c) noexcept {
-    var usz i = 0;
+  method io::WriteResult write_all(mc c) noexcept {
+    var uarch i = 0;
     while (i < c.len) {
-      const usz n = buf.write(c.slice_from(i));
+      const uarch n = buf.write(c.slice_from(i));
       i += n;
       if (n == 0) {
-        const fs::WriteResult r = flush();
+        const io::WriteResult r = flush();
         if (r.is_err()) {
-          return fs::WriteResult(fs::WriteResult::Code::Flush, i);
+          return io::WriteResult(io::WriteResult::Code::Flush, i);
         }
       }
     }
 
-    return fs::WriteResult(c.len);
+    return io::WriteResult(c.len);
   }
 
   method void print(str s) noexcept { write_all(s); }
@@ -64,21 +64,21 @@ struct Writer {
   }
 
   // Write line feed (aka "newline") character
-  method fs::WriteResult lf() noexcept {
+  method io::WriteResult lf() noexcept {
     if (buf.rem() == 0) {
-      const fs::WriteResult wr = flush();
+      const io::WriteResult wr = flush();
       if (wr.is_err()) {
-        return fs::WriteResult(fs::WriteResult::Code::Flush);
+        return io::WriteResult(io::WriteResult::Code::Flush);
       }
     }
 
     buf.lf();
-    return fs::WriteResult(1);
+    return io::WriteResult(1);
   }
 
   // Commits stored writes to underlying writer
-  method fs::WriteResult flush() noexcept {
-    const fs::WriteResult r = w.write_all(buf.head());
+  method io::WriteResult flush() noexcept {
+    const io::WriteResult r = w.write_all(buf.head());
     if (r.is_err()) {
       return r;
     }
@@ -88,7 +88,7 @@ struct Writer {
   }
 
   // Flush the buffer and close underlying writer
-  method fs::CloseResult close() noexcept {
+  method io::CloseResult close() noexcept {
     flush();
     return w.close();
   }

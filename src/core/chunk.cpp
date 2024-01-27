@@ -84,7 +84,7 @@ struct mc {
     }
 
     unsafe_write(c.slice_to(n));
-    return w;
+    return n;
   }
 
   // Write single byte to chunk
@@ -98,7 +98,7 @@ struct mc {
 
   method void unsafe_write(u8* bytes, uarch n) noexcept { unsafe_write(mc(bytes, n)); }
 
-  method void unsafe_write(mc c) noexcept { copy(c.ptr, ptr, c.len); }
+  method void unsafe_write(mc c) noexcept { mem::copy(c.ptr, ptr, c.len); }
 
   // Write single byte to chunk
   method void unsafe_write(u8 x) noexcept { ptr[0] = x; }
@@ -118,20 +118,20 @@ struct mc {
     }
   }
 
-  method uarch fmt_dec(u8 x) noexcept;
+  // method uarch fmt_dec(u8 x) noexcept;
 
-  // Same as format_dec, but unused bytes will be filled with padding
-  method uarch pad_fmt_dec(u64 x) noexcept {
-    var uarch w = fmt_dec(x);
-    if (w == 0) {
-      return 0;
-    }
-    if (w == len) {
-      return w;
-    }
-    slice_from(w).fill(' ');
-    return len;
-  }
+  // // Same as format_dec, but unused bytes will be filled with padding
+  // method uarch pad_fmt_dec(u64 x) noexcept {
+  //   var uarch w = fmt_dec(x);
+  //   if (w == 0) {
+  //     return 0;
+  //   }
+  //   if (w == len) {
+  //     return w;
+  //   }
+  //   slice_from(w).fill(' ');
+  //   return len;
+  // }
 
   // Write specified byte repeated n times to memory chunk
   method uarch write_repeat(uarch n, u8 x) noexcept {
@@ -186,17 +186,17 @@ struct chunk {
   T* ptr;
 
   // Number of elements in chunk
-  usz len;
+  uarch len;
 
   let chunk() noexcept : ptr(nil), len(0) {}
 
-  let chunk(T* elems, usz n) noexcept : ptr(elems), len(n) {}
+  let chunk(T* elems, uarch n) noexcept : ptr(elems), len(n) {}
 
   method bool is_nil() const noexcept { return len == 0; }
 
   method mc as_mc() const noexcept { return mc(cast(u8*, ptr), size()); }
 
-  method usz size() const noexcept { return chunk_size(T, len); }
+  method uarch size() const noexcept { return chunk_size(T, len); }
 
   method void clear() noexcept { as_mc().clear(); }
 };
@@ -213,7 +213,7 @@ struct cstr {
   //
   // Thus actual number of stored bytes available through
   // pointer is len + 1
-  usz len;
+  uarch len;
 
   let cstr() noexcept : ptr(nil), len(0) {}
 
@@ -223,7 +223,7 @@ struct cstr {
   // For safe version with proper error-checking refer to
   // function try_parse_cstr
   let cstr(u8* s) noexcept {
-    var usz i = 0;
+    var uarch i = 0;
     while (s[i] != 0) {
       i += 1;
     }
@@ -234,7 +234,7 @@ struct cstr {
   // Use this constructor if length of C string is already
   // known before the call. Second argument is number of
   // bytes in string, not including zero terminator
-  let cstr(u8* s, usz n) noexcept : ptr(s), len(n) {}
+  let cstr(u8* s, uarch n) noexcept : ptr(s), len(n) {}
 
   method bool is_nil() const noexcept { return len == 0; }
 
@@ -247,6 +247,23 @@ struct cstr {
   method mc with_null() const noexcept { return mc(ptr, len + 1); }
 };
 
+#define static_c_string(s) cstr((u8*)u8##s, sizeof(u8##s) - 1)
+
+// Copies entire memory chunk from source into destination and
+// adds null terminator at the the end. Resulting C string in
+// destination memory chunk will occupy exactly source length + 1
+// bytes. Destination must have enough space to hold that much
+// data
+//
+// Returns C string structure which borrows memory from destination
+fn cstr unsafe_copy_as_cstr(str src, mc dst) noexcept {
+  must(dst.len >= src.len + 1);
+
+  dst.unsafe_write(src);
+  dst.ptr[src.len] = 0;
+  return cstr(dst.ptr, src.len);
+}
+
 // Buffer for storing elements (of the same type) in continuous memory region
 // which allows appending new elements to the end of buffer until buffer
 // capacity is reached
@@ -256,16 +273,16 @@ struct buffer {
   T* ptr;
 
   // Number of elements stored in buffer
-  usz len;
+  uarch len;
 
   // Buffer capacity i.e. maximum number of elements it can hold
-  usz cap;
+  uarch cap;
 
   let constexpr buffer() noexcept : ptr(nil), len(0), cap(0) {}
 
   let buffer(chunk<T> c) noexcept : ptr(c.ptr), len(0), cap(c.len) {}
 
-  let buffer(T* p, usz n) noexcept : ptr(p), len(0), cap(n) {}
+  let buffer(T* p, uarch n) noexcept : ptr(p), len(0), cap(n) {}
 
   method bool is_empty() const noexcept { return len == 0; }
 
@@ -275,7 +292,7 @@ struct buffer {
 
   // Returns number of elements which can be appended to buffer before it is
   // full
-  method usz rem() const noexcept { return cap - len; }
+  method uarch rem() const noexcept { return cap - len; }
 
   method void reset() noexcept { len = 0; }
 
@@ -284,7 +301,7 @@ struct buffer {
   method chunk<T> head() const noexcept { return chunk<T>(ptr, len); }
 
   // Append new element to buffer tail
-  method usz append(T elem) noexcept {
+  method uarch append(T elem) noexcept {
     if (is_full()) {
       return 0;
     }
@@ -311,13 +328,13 @@ struct buffer {
   // at the tip of buffer
   //
   // This method does not perform any safety checks
-  method void unsafe_insert(usz i, T x) noexcept {
+  method void unsafe_insert(uarch i, T x) noexcept {
     if (i == len) {
       unsafe_append(x);
       return;
     }
 
-    move(cast(u8*, ptr + i), cast(u8*, ptr + i + 1), (len - i) * sizeof(T));
+    mem::move(cast(u8*, ptr + i), cast(u8*, ptr + i + 1), (len - i) * sizeof(T));
     len += 1;
     ptr[i] = x;
   }
@@ -336,13 +353,13 @@ struct buffer {
   // from the tip of buffer
   //
   // This method does not perform any safety checks
-  method void unsafe_remove(usz i) noexcept {
+  method void unsafe_remove(uarch i) noexcept {
     if (i == len - 1) {
       len -= 1;
       return;
     }
 
-    move(cast(u8*, ptr + i + 1), cast(u8*, ptr + i), (len - i - 1) * sizeof(T));
+    mem::move(cast(u8*, ptr + i + 1), cast(u8*, ptr + i), (len - i - 1) * sizeof(T));
     len -= 1;
   }
 

@@ -1,0 +1,28 @@
+// Unit clause specifies list of files that comprise the unit
+//
+// Files must be ordered in such a way that concatenating them
+// into a single file yields a valid C++ source file with proper
+// order of declarations and definitions of symbols
+unit core {
+    // List of unit source files
+    //
+    // This is used by "build" and "test" commands
+    files = .[
+        "prelude.cpp",
+        "chunk.cpp",
+        "cmp.cpp",
+        "bits.cpp",
+        "mem.cpp",
+        "fmt.cpp",
+        "io.cpp",
+        "syscall_linux.cpp",
+        "os.cpp",
+        "os_linux.cpp",
+        "log.cpp",
+    ];
+
+    // List of unit test files
+    //
+    // This is only used by "test" command
+    test_files = .[];
+}

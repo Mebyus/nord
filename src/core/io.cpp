@@ -1,6 +1,12 @@
 namespace coven::io {
 
-typedef uarch FileHandle;
+struct FileHandle {
+  uarch val;
+
+  let FileHandle() noexcept : val(0) {}
+  let FileHandle(u32 val) noexcept : val(val) {}
+  let FileHandle(uarch val) noexcept : val(val) {}
+};
 
 struct OpenResult {
   enum struct Code : u8 {
@@ -14,12 +20,12 @@ struct OpenResult {
     AlreadyExists,
   };
 
-  FileHandle fd;
+  FileHandle handle;
 
   Code code;
 
-  let OpenResult(FileHandle f) noexcept : fd(f), code(Code::Ok) {}
-  let OpenResult(Code c) noexcept : fd(0), code(c) {}
+  let OpenResult(FileHandle handle) noexcept : handle(handle), code(Code::Ok) {}
+  let OpenResult(Code code) noexcept : handle(FileHandle()), code(code) {}
 
   method bool is_ok() const noexcept { return code == Code::Ok; }
   method bool is_err() const noexcept { return code != Code::Ok; }

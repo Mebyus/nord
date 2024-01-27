@@ -4,6 +4,38 @@ internal const u32 stdin_fd = 0;
 internal const u32 stdout_fd = 1;
 internal const u32 stderr_fd = 2;
 
+fn io::OpenResult::Code dispatch_open_error(syscall::Error err) noexcept {
+  switch (error_code) {
+  case ErrorCode::EACCES:
+  case ErrorCode::EBUSY:
+  case ErrorCode::EDQUOT:
+  case ErrorCode::EEXIST:
+  case ErrorCode::EFAULT:
+  case ErrorCode::EFBIG:
+  case ErrorCode::EINTR:
+  case ErrorCode::EINVAL:
+  case ErrorCode::EISDIR:
+  case ErrorCode::ELOOP:
+  case ErrorCode::EMFILE:
+  case ErrorCode::ENAMETOOLONG:
+  case ErrorCode::ENFILE:
+  case ErrorCode::ENODEV:
+  case ErrorCode::ENOENT:
+  case ErrorCode::ENOMEM:
+  case ErrorCode::ENOSPC:
+  case ErrorCode::ENOTDIR:
+  case ErrorCode::ENXIO:
+  case ErrorCode::EOPNOTSUPP:
+  case ErrorCode::EOVERFLOW:
+  case ErrorCode::EPERM:
+  case ErrorCode::EROFS:
+  case ErrorCode::ETXTBSY:
+  case ErrorCode::EWOULDBLOCK:
+  default:
+    return io::OpenResult::Code::Error;
+  }
+}
+
 fn inline io::OpenResult open(cstr path, u32 flags, u32 mode) noexcept {
   var syscall::Result r dirty;
   do {
@@ -15,6 +47,11 @@ fn inline io::OpenResult open(cstr path, u32 flags, u32 mode) noexcept {
   }
 
   // dispatch error
+}
+
+fn io::OpenResult create(cstr path) noexcept {
+  const u32 flags = syscall::OpenFlags::O_CREAT | syscall::OpenFlags::O_TRUNC | syscall::OpenFlags::O_WRONLY;
+  return open(path, flags, 0644);
 }
 
 fn inline io::CloseResult::Code dispatch_close_error(syscall::Error err) noexcept {
@@ -55,18 +92,35 @@ fn io::CloseResult close(io::FileHandle handle) noexcept {
   return io::CloseResult(dispatch_close_error(r.err));
 }
 
+fn inline io::ReadResult::Code dispatch_read_error(syscall::Error err) noexcept {
+  switch (err) {
+    case syscall::Error::EAGAIN:
+    case syscall::Error::EBADF:
+    case syscall::Error::EFAULT:
+    case syscall::Error::EINVAL:
+    case syscall::Error::EIO:
+    case syscall::Error::EISDIR:
+  default:
+    // Unknown error code
+    return io::ReadResult::Code::Error;
+  }
+}
+
 fn io::ReadResult read(io::FileHandle handle, mc buf) noexcept {
   // TODO: check too large buffer size (at most 0x7ffff000)
   var syscall::Result r dirty;
   do {
-    r = syscall::read(handle, buf.ptr, buf.len);
+    r = syscall::read(handle.val, buf.ptr, buf.len);
   } while (r.err == syscall.EINTR);
 
   if (r.is_ok()) {
+    if (r.val == 0) {
+      return io::ReadResult(r.val, io::ReadResult::Code::EOF);
+    }
     return io::ReadResult(r.val);
   }
 
-  // dispatch error
+  return io::ReadResult(dispatch_read_error(r.err));
 }
 
 }  // namespace coven::os::linux
@@ -91,10 +145,10 @@ struct Sink {
 
   let Sink(fs::FileHandle fd) noexcept : fd(fd) {}
 
-  method fs::WriteResult write(mc c) noexcept { return fs::write(fd, c); }
+  method io::WriteResult write(mc c) noexcept { return io::write(fd, c); }
 
-  method fs::WriteResult write_all(mc c) noexcept {
-    return fs::write_all(fd, c);
+  method io::WriteResult write_all(mc c) noexcept {
+    return io::write_all(fd, c);
   }
 
   // A convenience wrapper of write_all method for clients which always
@@ -104,7 +158,7 @@ struct Sink {
   // No additional attempts to write the rest of input are made
   method void print(str s) noexcept { write_all(s); }
 
-  method fs::CloseResult close() noexcept { return os::close(fd); }
+  method io::CloseResult close() noexcept { return os::close(fd); }
 };
 
 var Sink raw_stdout = Sink(linux::stdout_fd);
@@ -134,19 +188,28 @@ var bufio::Writer<Sink> stderr =
 // Note that this implementation does unbuffered reads. To make buffered
 // version use bufio::Reader
 struct Tap {
-  fs::FileHandle fd;
+  io::FileHandle fd;
 
-  let Tap(fs::FileHandle fd) noexcept : fd(fd) {}
+  let Tap(io::FileHandle fd) noexcept : fd(fd) {}
 
-  method fs::ReadResult read(mc c) noexcept { return fs::read(fd, c); }
+  method io::ReadResult read(mc c) noexcept { return io::read(fd, c); }
 
-  method fs::ReadResult read_all(mc c) noexcept { return fs::read_all(fd, c); }
+  method io::ReadResult read_all(mc c) noexcept { return io::read_all(fd, c); }
 };
 
 var Tap raw_stdin = Tap(linux::stdin_fd);
 
 fn io::OpenResult create(str path) noexcept {
+  const uarch path_buf_length = 1 << 14;
+  if (path.len >= path_buf_length) {
+    return io::OpenResult(OpenResult::Code::PathTooLong);
+  }
 
+  var u8 buf[path_buf_length] dirty;
+  var mc path_buf = mc(path_buf, path_buf_length);
+  var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
+
+  return linux::create(path_as_cstr);
 }
 
 }  // namespace coven::os

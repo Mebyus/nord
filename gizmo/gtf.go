@@ -127,6 +127,7 @@ func buildTestMainObject(ctx BuildContext, item ObjectItem, testFilenames []stri
 
 	args := make([]string, 0, 10+len(genFlags)+len(warningFlags)+len(otherFlags)+len(item.Parts))
 	args = append(args, genFlags...)
+	args = append(args, maxCompilerErrorsFlag)
 	args = append(args, warningFlags...)
 	args = append(args, otherFlags...)
 	args = append(args, stdFlag(compilerStdVersion))

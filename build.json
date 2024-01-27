@@ -60,9 +60,17 @@
                         "name": "main",
                         "kind": "c++",
                         "parts": [
-                            "prelude.hpp",
-                            "core.hpp",
-                            "core_linux.cpp",
+                            "core/prelude.cpp",
+                            "core/chunk.cpp",
+                            "core/cmp.cpp",
+                            "core/bits.cpp",
+                            "core/mem.cpp",
+                            "core/fmt.cpp",
+                            "core/io.cpp",
+                            "core/syscall_linux.cpp",
+                            "core/os.cpp",
+                            "core/os_linux.cpp",
+                            "core/log.cpp",
                             "input_sequence_inspect.cpp"
                         ],
                         "ext_headers": [
@@ -84,7 +92,7 @@
                         "name": "platform",
                         "kind": "asm",
                         "parts": [
-                            "syscall_linux_amd64.s"
+                            "core/syscall_linux_amd64.s"
                         ]
                     }
                 ]

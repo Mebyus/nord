@@ -33,22 +33,20 @@ struct Logger {
 
   // Use only for global variables. Produced Logger is invalid and
   // must be overwritten later using any other constructor
-  // let Logger() noexcept : writer(fs::BufFileWriter()), level(Level::All) {}
-
   let Logger() noexcept : level(Level::All), in_progress(false) {}
 
-  let Logger(Level l) noexcept : level(l), in_progress(false) {}
+  let Logger(Level level) noexcept : level(level), in_progress(false) {}
 
   let Logger(str filename) noexcept : level(Level::All), in_progress(false) {
     init(filename);
   }
 
-  let Logger(str filename, Level l) noexcept : level(l), in_progress(false) {
+  let Logger(str filename, Level level) noexcept : level(level), in_progress(false) {
     init(filename);
   }
 
   method void init(str filename) noexcept {
-    const fs::OpenResult r = fs::create(filename);
+    const io::OpenResult r = io::create(filename);
     if (r.is_err()) {
       return;
     }
@@ -74,7 +72,7 @@ struct Logger {
       return;
     }
 
-    const mc prefix = macro_static_str("  [debug] ");
+    const str prefix = static_string("  [debug] ");
     // write_timestamp();
     write(prefix);
     write(s);
@@ -85,7 +83,7 @@ struct Logger {
       return;
     }
 
-    const mc prefix = macro_static_str("   [info] ");
+    const str prefix = static_string("   [info] ");
     // write_timestamp();
     write(prefix);
     write(s);
@@ -96,7 +94,7 @@ struct Logger {
       return;
     }
 
-    const mc prefix = macro_static_str("   [warn] ");
+    const str prefix = static_string("   [warn] ");
     // write_timestamp();
     write(prefix);
     write(s);
@@ -107,7 +105,7 @@ struct Logger {
       return;
     }
 
-    const mc prefix = macro_static_str("  [error] ");
+    const str prefix = static_string("  [error] ");
     // write_timestamp();
     write(prefix);
     write(s);

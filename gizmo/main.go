@@ -275,6 +275,10 @@ func mergeSourceFiles(outFilePath string, files []string, includeHeaders []strin
 		buf.WriteString(fullPath)
 		buf.WriteRune('\n')
 
+		buf.WriteString("#line 1 \"")
+		buf.WriteString(fullPath)
+		buf.WriteString("\"\n")
+
 		err := appendFileContents(&buf, fullPath)
 		if err != nil {
 			return err
@@ -363,6 +367,7 @@ const testCompilerOptimizations = "1"
 const safeCompilerOptimizations = "2"
 const fastCompilerOptimizations = "fast"
 const debugInfoFlag = "-ggdb"
+const maxCompilerErrorsFlag = "-fmax-errors=1"
 
 var otherFlags = []string{
 	"-Werror",
@@ -386,6 +391,7 @@ func buildCppObject(ctx BuildContext, item ObjectItem) error {
 
 	args := make([]string, 0, 10+len(genFlags)+len(warningFlags)+len(otherFlags)+len(item.Parts))
 	args = append(args, genFlags...)
+	args = append(args, maxCompilerErrorsFlag)
 	args = append(args, warningFlags...)
 	args = append(args, otherFlags...)
 	args = append(args, stdFlag(compilerStdVersion))

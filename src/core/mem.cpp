@@ -11,7 +11,7 @@ fn void copy(u8* restrict src, u8* restrict dst, uarch n) noexcept {
   }
 }
 
-fn void move(u8* restrict src, u8* dst, iarch n) noexcept {
+fn void move(u8* restrict src, u8* dst, uarch n) noexcept {
   must(n != 0);
   must(src != 0);
   must(dst != 0);
@@ -81,7 +81,7 @@ struct Arena {
     return cp.slice_to(c.len);
   }
 
-  method usz rem() const noexcept { return buf.len - pos; }
+  method uarch rem() const noexcept { return buf.len - pos; }
 
   // Pop n bytes from previous allocations, marking them as
   // available for next allocations. Popped memory will no
@@ -90,7 +90,7 @@ struct Arena {
   // Use this operation with extreme caution. It is primary usage
   // intended for deallocating short-lived scratch buffers which
   // lifetime is limited by narrow scope
-  method void pop(usz n) noexcept {
+  method void pop(uarch n) noexcept {
     must(n != 0);
     must(bits::is_aligned_by_16(n));
     must(n <= pos);

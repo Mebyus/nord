@@ -20,25 +20,6 @@ fn OpenResult open(str filename) noexcept {
   return OpenResult(cast(FileHandle, fd));
 }
 
-fn OpenResult create(str filename) noexcept {
-  const usz path_buf_length = 1 << 12;
-  if (filename.len >= path_buf_length) {
-    return OpenResult(OpenResult::Code::PathTooLong);
-  }
-
-  var u8 path_buf[path_buf_length] dirty;
-  var mc path_mc = mc(path_buf, filename.len + 1);
-  var cstr path = unsafe_copy_as_cstr(filename, path_mc);
-
-  const i32 fd =
-      ::open(cast(char*, path.ptr), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-  if (fd < 0) {
-    return OpenResult(OpenResult::Code::Error);
-  }
-
-  return OpenResult(cast(FileHandle, fd));
-}
-
 fn CloseResult close(FileHandle fd) noexcept {
   ::close(cast(i32, fd));
   return CloseResult();

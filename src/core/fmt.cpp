@@ -61,7 +61,7 @@ fn internal inline constexpr u8 dec_digit_to_number(u8 digit) noexcept {
 
 fn internal inline constexpr u8 hex_digit_to_number(u8 digit) noexcept {
   if (digit <= '9') {
-    return dec_digit_to_number(c);
+    return dec_digit_to_number(digit);
   }
 
   // transforms small into capital letters
@@ -172,14 +172,14 @@ fn uarch dec(mc buf, u32 x) noexcept {
 
 fn uarch unsafe_dec(mc buf, i64 x) noexcept {
   if (x >= 0) {
-    return unsafe_dec(cast(u64, x));
+    return unsafe_dec(buf, cast(u64, x));
   }
   
   buf.unsafe_write('-');
   x = -x;
-  const uarch n = dec(buf.slice_from(1) cast(u64, x));
+  const uarch n = dec(buf.slice_from(1), cast(u64, x));
   
-  return n +1;
+  return n + 1;
 }
 
 // Write number (i64) in decimal format to chunk in utf-8 encoding
@@ -188,19 +188,19 @@ fn uarch unsafe_dec(mc buf, i64 x) noexcept {
 // in chunk zero will be returned, but chunk will not be untouched
 fn uarch dec(mc buf, i64 x) noexcept {
   if (x >= 0) {
-    return fmt_dec(cast(u64, x));
+    return dec(buf, cast(u64, x));
   }
 
-  if (len < 2) {
+  if (buf.len < 2) {
     return 0;
   }
-  unsafe_write('-');
+  buf.unsafe_write('-');
   x = -x;
-  var uarch w = slice_from(1).fmt_dec(cast(u64, x));
-  if (w == 0) {
+  var uarch n = dec(buf.slice_from(1), cast(u64, x));
+  if (n == 0) {
     return 0;
   }
-  return w + 1;
+  return n + 1;
 }
 
 // Write number (u32) in binary format to chunk in utf-8 encoding.
@@ -217,41 +217,41 @@ fn uarch dec(mc buf, i64 x) noexcept {
   while (i > l - 8) {
     i -= 1;
     const u8 n = x & 1;
-    ptr[i] = number_to_dec_digit(digit);
+    buf.ptr[i] = number_to_dec_digit(n);
     x = x >> 1;
   }
 
   i -= 1;
-  ptr[i] = ' ';
+  buf.ptr[i] = ' ';
 
   while (i > l - 17) {
     i -= 1;
     const u8 n = x & 1;
-    ptr[i] = number_to_dec_digit(digit);
+    buf.ptr[i] = number_to_dec_digit(n);
     x = x >> 1;
   }
 
   i -= 1;
-  ptr[i] = ' ';
+  buf.ptr[i] = ' ';
 
   while (i > l - 26) {
     i -= 1;
     const u8 n = x & 1;
-    ptr[i] = number_to_dec_digit(digit);
+    buf.ptr[i] = number_to_dec_digit(n);
     x = x >> 1;
   }
 
   i -= 1;
-  ptr[i] = ' ';
+  buf.ptr[i] = ' ';
 
   while (i > 1) {
     i -= 1;
     const u8 n = x & 1;
-    ptr[i] = number_to_dec_digit(digit);
+    buf.ptr[i] = number_to_dec_digit(n);
     x = x >> 1;
   }
 
-  ptr[0] = number_to_dec_digit(cast(u8, x));
+  buf.ptr[0] = number_to_dec_digit(cast(u8, x));
 
   return l;
 }
@@ -374,13 +374,13 @@ fn uarch unsafe_hex_prefix(mc c, u64 x) noexcept {
 fn uarch unsafe_mc(mc c, mc t) noexcept {
   var uarch len = 0;
 
-  c.unsafe_write(macro_static_str("ptr="));
+  c.unsafe_write(static_string("ptr="));
   len += 4;
 
   unsafe_hex_prefix_fixed(c.slice_from(len), cast(u64, t.ptr));
   len += 18;
 
-  c.slice_from(len).unsafe_write(macro_static_str(" len="));
+  c.slice_from(len).unsafe_write(static_string(" len="));
   len += 5;
 
   const uarch n = unsafe_hex_prefix(c.slice_from(len), t.len);
@@ -435,7 +435,7 @@ struct Buffer {
     if (w == 0) {
       return 0;
     }
-    copy(bytes, tip(), w);
+    mem::copy(bytes, tip(), w);
     len += w;
     return w;
   }
@@ -469,7 +469,7 @@ struct Buffer {
   }
 
   method uarch unsafe_write(mc c) noexcept {
-    copy(c.ptr, tip(), c.len);
+    mem::copy(c.ptr, tip(), c.len);
     len += c.len;
     return c.len;
   }
@@ -517,7 +517,7 @@ struct Buffer {
       return;
     }
 
-    move(ptr + i, ptr + i + 1, len - i);
+    mem::move(ptr + i, ptr + i + 1, len - i);
     len += 1;
     ptr[i] = x;
   }
@@ -544,12 +544,12 @@ struct Buffer {
       return;
     }
 
-    move(ptr + i + 1, ptr + i, len - i - 1);
+    mem::move(ptr + i + 1, ptr + i, len - i - 1);
     len -= 1;
   }
 
   method uarch dec(u8 x) noexcept {
-    const uarch n = dec(tail(), x);
+    const uarch n = fmt::dec(tail(), x);
     len += n;
     return n;
   }
