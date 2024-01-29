@@ -170,6 +170,34 @@ fn uarch dec(mc buf, u32 x) noexcept {
   return dec(buf, cast(u64, x));
 }
 
+fn inline uarch unsafe_dec(mc buf, u16 x) noexcept {
+  return unsafe_dec(buf, cast(u64, x));
+}
+
+internal const uarch max_u16_dec_length = 5;
+
+fn uarch dec(mc buf, u16 x) noexcept { 
+  if (buf.len >= max_u16_dec_length) {
+    return unsafe_dec(buf, x);
+  }
+
+  return dec(buf, cast(u64, x));
+}
+
+fn inline uarch unsafe_dec(mc buf, u8 x) noexcept {
+  return unsafe_dec(buf, cast(u64, x));
+}
+
+internal const uarch max_u8_dec_length = 3;
+
+fn uarch dec(mc buf, u8 x) noexcept { 
+  if (buf.len >= max_u8_dec_length) {
+    return unsafe_dec(buf, x);
+  }
+
+  return dec(buf, cast(u64, x));
+}
+
 fn uarch unsafe_dec(mc buf, i64 x) noexcept {
   if (x >= 0) {
     return unsafe_dec(buf, cast(u64, x));
@@ -203,14 +231,16 @@ fn uarch dec(mc buf, i64 x) noexcept {
   return n + 1;
 }
 
+// 32 binary digits + 3 spaces
+internal const uarch u32_bin_delim_fixed_length = 8 * 4 + 3;
+
 // Write number (u32) in binary format to chunk in utf-8 encoding.
 // Bytes are separated with single space
 //
 // Returns number of bytes written. If there is not enough space
 // in chunk zero will be returned, but chunk will not be untouched
- fn uarch unsafe_bin_delim(mc buf, u32 x) noexcept {
-  // 32 binary digits + 3 spaces
-  const uarch l = 8 * 4 + 3;
+ fn void unsafe_bin_delim_fixed(mc buf, u32 x) noexcept {
+  const uarch l = u32_bin_delim_fixed_length;
 
   var uarch i = l;
   // digits are written from least to most significant bit
@@ -252,8 +282,15 @@ fn uarch dec(mc buf, i64 x) noexcept {
   }
 
   buf.ptr[0] = number_to_dec_digit(cast(u8, x));
+}
 
-  return l;
+fn uarch bin_delim_fixed(mc buf, u32 x) noexcept {
+  if (buf.len < u32_bin_delim_fixed_length) {
+    return 0;
+  }
+
+  unsafe_bin_delim_fixed(buf, x);
+  return u32_bin_delim_fixed_length;
 }
 
 fn u64 unsafe_parse_dec(str s) noexcept {
@@ -556,60 +593,62 @@ struct Buffer {
 
   // overload for convenient usage with sizeof() results
   method uarch dec(unsigned long int x) noexcept {
-    const uarch n = dec(tail(), cast(u32, x));
+    const uarch n = fmt::dec(tail(), cast(u32, x));
     len += n;
     return n;
   }
 
   method uarch dec(u16 x) noexcept {
-    const uarch n = dec(tail(), x);
+    const uarch n = fmt::dec(tail(), x);
     len += n;
     return n;
   }
 
   method uarch dec(u32 x) noexcept {
-    const uarch n = dec(tail(), x);
+    const uarch n = fmt::dec(tail(), x);
     len += n;
     return n;
   }
 
-  method uarch unsafe_fmt_dec(u32 x) noexcept {
-    return unsafe_fmt_dec(cast(u64, x));
-  }
-
-  method uarch unsafe_fmt_dec(u64 x) noexcept {
-    var mc t = tail();
-    var uarch w = t.unsafe_fmt_dec(x);
-    len += w;
-    return w;
-  }
-
-  method uarch fmt_dec(u64 x) noexcept {
+  method uarch dec(u64 x) noexcept {
     if (is_full()) {
       return 0;
     }
 
-    var mc t = tail();
-    var uarch w = t.fmt_dec(x);
-    len += w;
-    return w;
+    const uarch n = fmt::dec(tail(), x);
+    len += n;
+    return n;
   }
 
-  method uarch fmt_dec(i64 x) noexcept {
-    var mc t = tail();
-    if (t.is_nil()) {
+  method uarch dec(i64 x) noexcept {
+    if (is_full()) {
       return 0;
     }
-    var uarch w = t.fmt_dec(x);
-    len += w;
-    return w;
+
+    const uarch n = fmt::dec(tail(), x);
+    len += n;
+    return n;
   }
 
-  method uarch fmt_bin_delim(u32 x) noexcept {
-    var mc t = tail();
-    var uarch w = t.fmt_bin_delim(x);
-    len += w;
-    return w;
+  method uarch unsafe_dec(u64 x) noexcept {
+    const uarch n = fmt::unsafe_dec(tail(), x);
+    len += n;
+    return n;
+  }
+
+  method uarch unsafe_dec(u32 x) noexcept {
+    return unsafe_dec(cast(u64, x));
+  }
+
+  method uarch bin_delim_fixed(u32 x) noexcept {
+    const uarch n = fmt::bin_delim_fixed(tail(), x);
+    len += n;
+    return n;
+  }
+
+  method void unsafe_bin_delim_fixed(u32 x) noexcept {
+    fmt::unsafe_bin_delim_fixed(tail(), x);
+    len += u32_bin_delim_fixed_length;
   }
 
   // Returns memory chunk which is occupied by actual data

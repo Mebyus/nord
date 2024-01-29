@@ -1,7 +1,7 @@
 namespace coven::log {
 
 struct Logger {
-  static const usz buf_size = 1 << 13;
+  static const uarch buf_size = 1 << 13;
   // static const usz ts_prefix_size = 12;
 
   enum struct Level : u8 {
@@ -18,13 +18,14 @@ struct Logger {
     Nothing,
   };
 
+  // this buffer is used inside buffered writer
   u8 buf[buf_size];
 
   // Buffer for writing timestamp
   // u8 ts_buf[ts_prefix_size];
 
   // Output buffer
-  fs::BufFileWriter writer;
+  bufio::Writer<os::Sink> writer;
 
   // Starting Tick when Logger was created
   // time::Tick start;
@@ -46,12 +47,12 @@ struct Logger {
   }
 
   method void init(str filename) noexcept {
-    const io::OpenResult r = io::create(filename);
+    const os::OpenResult r = os::create(filename);
     if (r.is_err()) {
       return;
     }
 
-    writer = fs::BufFileWriter(r.fd, mc(buf, buf_size));
+    writer = bufio::Writer(os::Sink(r.stream), mc(buf, buf_size));
   }
 
   method void flush() noexcept {

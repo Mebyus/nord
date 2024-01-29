@@ -67,26 +67,56 @@
                             "core/mem.cpp",
                             "core/fmt.cpp",
                             "core/io.cpp",
+                            "core/bufio.cpp",
                             "core/syscall_linux.cpp",
                             "core/os.cpp",
                             "core/os_linux.cpp",
                             "core/log.cpp",
                             "input_sequence_inspect.cpp"
                         ],
-                        "ext_headers": [
-                            "ctype.h",
-                            "errno.h",
-                            "execinfo.h",
-                            "fcntl.h",
-                            "stdio.h",
-                            "stdlib.h",
-                            "string.h",
-                            "sys/ioctl.h",
-                            "sys/stat.h",
-                            "termios.h",
-                            "time.h",
-                            "unistd.h"
+                        "ext_headers": []
+                    },
+                    {
+                        "name": "platform",
+                        "kind": "asm",
+                        "parts": [
+                            "core/syscall_linux_amd64.s"
                         ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "flatfit",
+        "kind": "executable",
+        "recipes": [
+            {
+                "target": {
+                    "os": "linux",
+                    "arch": "amd64"
+                },
+                "objects": [
+                    {
+                        "name": "main",
+                        "kind": "c++",
+                        "parts": [
+                            "core/prelude.cpp",
+                            "core/chunk.cpp",
+                            "core/cmp.cpp",
+                            "core/bits.cpp",
+                            "core/mem.cpp",
+                            "core/fmt.cpp",
+                            "core/container.cpp",
+                            "core/io.cpp",
+                            "core/bufio.cpp",
+                            "core/syscall_linux.cpp",
+                            "core/os.cpp",
+                            "core/os_linux.cpp",
+                            "core/log.cpp",
+                            "flat_fit.cpp"
+                        ],
+                        "ext_headers": []
                     },
                     {
                         "name": "platform",

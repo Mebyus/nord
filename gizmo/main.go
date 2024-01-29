@@ -345,7 +345,6 @@ var warningFlags = []string{
 	"-Wduplicated-branches",
 	"-Wduplicated-cond",
 	"-Wnull-dereference",
-	"-Wswitch-enum",
 	"-Wvla",
 	"-Wnoexcept",
 	"-Wswitch-default",

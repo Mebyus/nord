@@ -1000,7 +1000,7 @@ struct Lexer {
   }
 };
 
-fn fs::WriteResult dump_tokens(fs::FileHandle fd, Lexer& lx) noexcept {
+fn fs::WriteResult dump_tokens(fs::Stream fd, Lexer& lx) noexcept {
   var u8 write_buf[1 << 13] dirty;
   var fs::BufFileWriter w =
       fs::BufFileWriter(fd, mc(write_buf, sizeof(write_buf)));

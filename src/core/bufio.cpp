@@ -11,14 +11,16 @@ template <typename T>
 struct Writer {
   // Internal buffer for storing raw bytes before
   // commiting accumulated writes to file
-  bb buf;
+  fmt::Buffer buf;
 
   // Underlying writer that is being wrapped
   T w;
 
+  let Writer() noexcept {}
+
   // Create a buffered writer from a given writer and a supplied
   // buffer. Buffer is used as long as writer lives
-  let Writer(T writer, mc buf) noexcept : buf(bb(buf)), w(writer) { 
+  let Writer(T writer, mc c) noexcept : buf(fmt::Buffer(c)), w(writer) { 
     must(c.len != 0);
     must(c.ptr != nil);
   }

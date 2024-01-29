@@ -1,61 +1,99 @@
 namespace coven::os::linux {
 
-internal const u32 stdin_fd = 0;
-internal const u32 stdout_fd = 1;
-internal const u32 stderr_fd = 2;
+// Wrapper type for raw integer value of linux file descriptor
+//
+// When passing around file descriptors this struct is used instead of
+// raw integer types. This is mostly done as a (somewhat mouthful) technique
+// to enhance poor integer type safety in C++
+struct FileDescriptor {
+  uarch val;
 
-fn io::OpenResult::Code dispatch_open_error(syscall::Error err) noexcept {
-  switch (error_code) {
-  case ErrorCode::EACCES:
-  case ErrorCode::EBUSY:
-  case ErrorCode::EDQUOT:
-  case ErrorCode::EEXIST:
-  case ErrorCode::EFAULT:
-  case ErrorCode::EFBIG:
-  case ErrorCode::EINTR:
-  case ErrorCode::EINVAL:
-  case ErrorCode::EISDIR:
-  case ErrorCode::ELOOP:
-  case ErrorCode::EMFILE:
-  case ErrorCode::ENAMETOOLONG:
-  case ErrorCode::ENFILE:
-  case ErrorCode::ENODEV:
-  case ErrorCode::ENOENT:
-  case ErrorCode::ENOMEM:
-  case ErrorCode::ENOSPC:
-  case ErrorCode::ENOTDIR:
-  case ErrorCode::ENXIO:
-  case ErrorCode::EOPNOTSUPP:
-  case ErrorCode::EOVERFLOW:
-  case ErrorCode::EPERM:
-  case ErrorCode::EROFS:
-  case ErrorCode::ETXTBSY:
-  case ErrorCode::EWOULDBLOCK:
+  let FileDescriptor() noexcept : val(0) {}
+  let FileDescriptor(uarch val) noexcept : val(val) {}
+};
+
+internal const FileDescriptor stdin = FileDescriptor(0);
+internal const FileDescriptor stdout = FileDescriptor(1);
+internal const FileDescriptor stderr = FileDescriptor(2);
+
+// Describes result of open system call in more friendly way
+// than regular integer from raw syscall
+struct OpenSyscallResult {
+  FileDescriptor fd;
+
+  OpenResult::Code code;
+
+  let OpenSyscallResult(FileDescriptor fd) noexcept : fd(fd), code(OpenResult::Code::Ok) {}
+  let OpenSyscallResult(OpenResult::Code code) noexcept : fd(FileDescriptor()), code(code) {}
+
+  method bool is_ok() const noexcept { return code == OpenResult::Code::Ok; }
+  method bool is_err() const noexcept { return code != OpenResult::Code::Ok; }
+};
+
+fn internal OpenResult::Code dispatch_open_error(syscall::Error err) noexcept {
+  switch (err) {
+  case syscall::Error::OK: {
+    crash();
+  }
+  case syscall::Error::EACCES:
+  case syscall::Error::EBUSY:
+  case syscall::Error::EDQUOT:
+  case syscall::Error::EEXIST:
+  case syscall::Error::EFAULT:
+  case syscall::Error::EFBIG:
+  case syscall::Error::EINTR:
+  case syscall::Error::EINVAL:
+  case syscall::Error::EISDIR:
+  case syscall::Error::ELOOP:
+  case syscall::Error::EMFILE:
+  case syscall::Error::ENAMETOOLONG:
+  case syscall::Error::ENFILE:
+  case syscall::Error::ENODEV:
+  case syscall::Error::ENOENT:
+  case syscall::Error::ENOMEM:
+  case syscall::Error::ENOSPC:
+  case syscall::Error::ENOTDIR:
+  case syscall::Error::ENXIO:
+  case syscall::Error::EOPNOTSUPP:
+  case syscall::Error::EOVERFLOW:
+  case syscall::Error::EPERM:
+  case syscall::Error::EROFS:
+  case syscall::Error::ETXTBSY:
+  case syscall::Error::EWOULDBLOCK:
   default:
-    return io::OpenResult::Code::Error;
+    return OpenResult::Code::Error;
   }
 }
 
-fn inline io::OpenResult open(cstr path, u32 flags, u32 mode) noexcept {
+fn inline OpenSyscallResult open(cstr path, u32 flags, u32 mode) noexcept {
   var syscall::Result r dirty;
   do {
     r = syscall::open(path.ptr, flags, mode);
-  } while (r.err == syscall.EINTR);
+  } while (r.err == syscall::Error::EINTR);
 
   if (r.is_ok()) {
-    return io::OpenResult(r.val);
+    return OpenSyscallResult(r.val);
   }
 
-  // dispatch error
+  return OpenSyscallResult(dispatch_open_error(r.err));
 }
 
-fn io::OpenResult create(cstr path) noexcept {
-  const u32 flags = syscall::OpenFlags::O_CREAT | syscall::OpenFlags::O_TRUNC | syscall::OpenFlags::O_WRONLY;
+fn OpenSyscallResult create(cstr path) noexcept {
+  const u32 flags = cast(u32, syscall::OpenFlags::O_CREAT) | 
+                    cast(u32, syscall::OpenFlags::O_TRUNC) |
+                    cast(u32, syscall::OpenFlags::O_WRONLY);
+
   return open(path, flags, 0644);
 }
 
 fn inline io::CloseResult::Code dispatch_close_error(syscall::Error err) noexcept {
   switch (err) {
+
+  case syscall::Error::OK: {
+    // must be unreachable if function is used correctly
+    crash();
+  }
+
   case syscall::Error::EBADF: 
     // Not a valid open file descriptor.
     return io::CloseResult::Code::InvalidHandle;
@@ -79,11 +117,11 @@ fn inline io::CloseResult::Code dispatch_close_error(syscall::Error err) noexcep
   }
 }
 
-fn io::CloseResult close(io::FileHandle handle) noexcept {
+fn io::CloseResult close(FileDescriptor fd) noexcept {
   var syscall::Result r dirty;
   do {
-    r = syscall::close(cast(u32, handle));
-  } while (r.err == syscall.EINTR);
+    r = syscall::close(cast(u32, fd.val));
+  } while (r.err == syscall::Error::EINTR);
 
   if (r.is_ok()) {
     return io::CloseResult();
@@ -94,6 +132,9 @@ fn io::CloseResult close(io::FileHandle handle) noexcept {
 
 fn inline io::ReadResult::Code dispatch_read_error(syscall::Error err) noexcept {
   switch (err) {
+    case syscall::Error::OK: {
+      crash();
+    }
     case syscall::Error::EAGAIN:
     case syscall::Error::EBADF:
     case syscall::Error::EFAULT:
@@ -106,18 +147,18 @@ fn inline io::ReadResult::Code dispatch_read_error(syscall::Error err) noexcept 
   }
 }
 
-fn io::ReadResult read(io::FileHandle handle, mc buf) noexcept {
+fn io::ReadResult read(FileDescriptor fd, mc buf) noexcept {
   // TODO: check too large buffer size (at most 0x7ffff000)
   var syscall::Result r dirty;
   do {
-    r = syscall::read(handle.val, buf.ptr, buf.len);
-  } while (r.err == syscall.EINTR);
+    r = syscall::read(cast(u32, fd.val), buf.ptr, buf.len);
+  } while (r.err == syscall::Error::EINTR);
 
   if (r.is_ok()) {
     if (r.val == 0) {
-      return io::ReadResult(r.val, io::ReadResult::Code::EOF);
+      return io::ReadResult(io::ReadResult::Code::EOF);
     }
-    return io::ReadResult(r.val);
+    return io::ReadResult(cast(uarch, r.val));
   }
 
   return io::ReadResult(dispatch_read_error(r.err));
@@ -126,6 +167,14 @@ fn io::ReadResult read(io::FileHandle handle, mc buf) noexcept {
 }  // namespace coven::os::linux
 
 namespace coven::os {
+
+fn internal inline FileStream convert_to_file_stream(linux::FileDescriptor fd) noexcept {
+  return FileStream(fd.val);
+}
+
+fn internal inline OpenResult convert_to_open_result(linux::OpenSyscallResult r) noexcept {
+  return OpenResult(r.code, r.fd.val);
+}
 
 // Represents a one-way consumer of byte stream. Bytes can be written
 // to it, but cannot be read from
@@ -141,14 +190,14 @@ namespace coven::os {
 // Note that this implementation does unbuffered writes. To make buffered
 // version use bufio::Writer
 struct Sink {
-  fs::FileHandle fd;
+  FileStream stream;
 
-  let Sink(fs::FileHandle fd) noexcept : fd(fd) {}
+  let Sink(FileStream stream) noexcept : stream(stream) {}
 
-  method io::WriteResult write(mc c) noexcept { return io::write(fd, c); }
+  method io::WriteResult write(mc c) noexcept { return os::write(stream, c); }
 
   method io::WriteResult write_all(mc c) noexcept {
-    return io::write_all(fd, c);
+    return os::write_all(stream, c);
   }
 
   // A convenience wrapper of write_all method for clients which always
@@ -158,13 +207,17 @@ struct Sink {
   // No additional attempts to write the rest of input are made
   method void print(str s) noexcept { write_all(s); }
 
-  method io::CloseResult close() noexcept { return os::close(fd); }
+  method io::CloseResult close() noexcept { return os::close(stream); }
 };
 
-var Sink raw_stdout = Sink(linux::stdout_fd);
-var Sink raw_stderr = Sink(linux::stderr_fd);
+fn internal inline Sink convert_to_sink(linux::FileDescriptor fd) noexcept {
+  return Sink(convert_to_file_stream(fd.val));
+}
 
-internal const usz default_sink_buf_size = 1 << 13;
+var Sink raw_stdout = convert_to_sink(linux::stdout);
+var Sink raw_stderr = convert_to_sink(linux::stderr);
+
+internal const uarch default_sink_buf_size = 1 << 13;
 
 var u8 stdout_buf[default_sink_buf_size];
 var u8 stderr_buf[default_sink_buf_size];
@@ -188,28 +241,32 @@ var bufio::Writer<Sink> stderr =
 // Note that this implementation does unbuffered reads. To make buffered
 // version use bufio::Reader
 struct Tap {
-  io::FileHandle fd;
+  FileStream stream;
 
-  let Tap(io::FileHandle fd) noexcept : fd(fd) {}
+  let Tap(FileStream stream) noexcept : stream(stream) {}
 
-  method io::ReadResult read(mc c) noexcept { return io::read(fd, c); }
+  method io::ReadResult read(mc c) noexcept { return os::read(stream, c); }
 
-  method io::ReadResult read_all(mc c) noexcept { return io::read_all(fd, c); }
+  method io::ReadResult read_all(mc c) noexcept { return os::read_all(stream, c); }
 };
 
-var Tap raw_stdin = Tap(linux::stdin_fd);
+fn internal inline Tap convert_to_tap(linux::FileDescriptor fd) noexcept {
+  return Tap(convert_to_file_stream(fd.val));
+}
 
-fn io::OpenResult create(str path) noexcept {
+var Tap raw_stdin = convert_to_tap(linux::stdin);
+
+fn OpenResult create(str path) noexcept {
   const uarch path_buf_length = 1 << 14;
   if (path.len >= path_buf_length) {
-    return io::OpenResult(OpenResult::Code::PathTooLong);
+    return OpenResult(OpenResult::Code::PathTooLong);
   }
 
   var u8 buf[path_buf_length] dirty;
-  var mc path_buf = mc(path_buf, path_buf_length);
+  var mc path_buf = mc(buf, path_buf_length);
   var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
 
-  return linux::create(path_as_cstr);
+  return convert_to_open_result(linux::create(path_as_cstr));
 }
 
 }  // namespace coven::os

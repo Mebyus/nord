@@ -1,20 +1,6 @@
-#include <ctype.h>
-#include <errno.h>
-#include <execinfo.h>
-#include <fcntl.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <sys/stat.h>
-#include <termios.h>
-#include <unistd.h>
+namespace coven {
 
-#include "core.hpp"
-
-#include "core_linux.cpp"
-
-typedef container::FlatMap<usz>::Pair IndexedWord;
+typedef cont::FlatMap<usz>::Pair IndexedWord;
 
 fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
   var DynBuffer<IndexedWord> buf = DynBuffer<IndexedWord>();
@@ -68,6 +54,8 @@ fn CapSeedPair find_best_cap_and_seed(chunk<IndexedWord> words) noexcept {
 
   return CapSeedPair{.seed = m.seed, .cap = cap, .ok = true};
 }
+
+} // namespace coven
 
 fn i32 main(i32 argc, u8** argv) noexcept {
   if (argc < 2) {

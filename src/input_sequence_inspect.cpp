@@ -87,8 +87,8 @@ fn i32 main() noexcept {
   var mc ibuf = mc(input_buf, sizeof(input_buf));
   var bb buf = bb(output_buf, sizeof(output_buf));
 
-  const fs::FileHandle stdin_fd = 0;
-  const fs::FileHandle stdout_fd = 1;
+  const fs::Stream stdin_fd = 0;
+  const fs::Stream stdout_fd = 1;
 
   // track number of successfully read input sequences
   var u64 k = 0;

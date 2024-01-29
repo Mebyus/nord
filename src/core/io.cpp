@@ -1,87 +1,17 @@
 namespace coven::io {
 
-struct FileHandle {
-  uarch val;
-
-  let FileHandle() noexcept : val(0) {}
-  let FileHandle(u32 val) noexcept : val(val) {}
-  let FileHandle(uarch val) noexcept : val(val) {}
-};
-
-struct OpenResult {
-  enum struct Code : u8 {
-    Ok = 0,
-
-    // Generic error, no specifics known
-    Error,
-
-    PathTooLong,
-
-    AlreadyExists,
-  };
-
-  FileHandle handle;
-
-  Code code;
-
-  let OpenResult(FileHandle handle) noexcept : handle(handle), code(Code::Ok) {}
-  let OpenResult(Code code) noexcept : handle(FileHandle()), code(code) {}
-
-  method bool is_ok() const noexcept { return code == Code::Ok; }
-  method bool is_err() const noexcept { return code != Code::Ok; }
-};
-
-struct MkdirResult {
-  enum struct Code : u8 {
-    Ok = 0,
-
-    // Generic error, no specifics known
-    Error,
-
-    PathTooLong,
-
-    AlreadyExists,
-  };
-
-  Code code;
-
-  let MkdirResult(FileHandle f) noexcept : fd(f), code(Code::Ok) {}
-  let MkdirResult(Code c) noexcept : fd(0), code(c) {}
-
-  method bool is_ok() const noexcept { return code == Code::Ok; }
-  method bool is_err() const noexcept { return code != Code::Ok; }
-};
-
-fn OpenResult create(str filename) noexcept;
-
-struct CloseResult {
-  enum struct Code : u8 {
-    Ok = 0,
-
-    // Generic error, no specifics known
-    Error,
-
-    InvalidHandle,
-    InputOutputError,
-    NoSpaceLeftOnDevice,
-    DiskQuotaExceeded,
-  };
-
-  Code code;
-
-  let CloseResult() noexcept : code(Code::Ok) {}
-  let CloseResult(Code c) noexcept : code(c) {}
-
-  method bool is_ok() const noexcept { return code == Code::Ok; }
-  method bool is_err() const noexcept { return code != Code::Ok; }
-};
-
-fn CloseResult close(FileHandle fd) noexcept;
-
 struct ReadResult {
   enum struct Code : u8 {
     Ok = 0,
 
+    // End-Of-File indicator. If read returns result with this code
+    // than it means the associated resource (from which read was
+    // performed) is exhausted. All subsequent reads from exhaused
+    // resource will return EOF result with zero bytes read
+    //
+    // Note that first EOF result can contain non-zero number of bytes.
+    // Also it should be clarified that this result code is not considered
+    // as error, however it differs from regular read with Ok code
     EOF,
 
     // Generic error, no specifics known
@@ -103,28 +33,6 @@ struct ReadResult {
   method bool is_err() const noexcept {
     return code != Code::Ok && code != Code::EOF;
   }
-};
-
-struct FileReadResult {
-  enum struct Code : u8 {
-    Ok,
-
-    // Generic error, no specifics known
-    Error,
-
-    PathTooLong,
-  };
-
-  mc data;
-
-  Code code;
-
-  let FileReadResult(mc d) noexcept : data(d), code(Code::Ok) {}
-  let FileReadResult(Code c) noexcept : data(mc()), code(c) {}
-  let FileReadResult(mc d, Code c) noexcept : data(d), code(c) {}
-
-  method bool is_ok() const noexcept { return code == Code::Ok; }
-  method bool is_err() const noexcept { return code != Code::Ok; }
 };
 
 struct WriteResult {
@@ -151,36 +59,26 @@ struct WriteResult {
   method bool is_err() const noexcept { return code != Code::Ok; }
 };
 
-fn ReadResult read(FileHandle fd, mc c) noexcept;
+struct CloseResult {
+  enum struct Code : u8 {
+    Ok = 0,
 
-fn ReadResult read_all(FileHandle fd, mc c) noexcept {
-  var uarch i = 0;
-  while (i < c.len) {
-    const ReadResult r = read(fd, c.slice_from(i));
-    i += r.n;
+    // Generic error, no specifics known
+    Error,
 
-    if (!r.is_ok()) {
-      return ReadResult(r.code, i);
-    }
-  }
+    InvalidHandle,
+    InputOutputError,
+    NoSpaceLeftOnDevice,
+    DiskQuotaExceeded,
+  };
 
-  return ReadResult(c.len);
-}
+  Code code;
 
-fn WriteResult write(FileHandle fd, mc c) noexcept;
+  let CloseResult() noexcept : code(Code::Ok) {}
+  let CloseResult(Code code) noexcept : code(code) {}
 
-fn WriteResult write_all(FileHandle fd, mc c) noexcept {
-  var uarch i = 0;
-  while (i < c.len) {
-    const WriteResult r = write(fd, c.slice_from(i));
-    i += r.n;
-
-    if (r.is_err()) {
-      return WriteResult(r.code, i);
-    }
-  }
-
-  return WriteResult(c.len);
-}
+  method bool is_ok() const noexcept { return code == Code::Ok; }
+  method bool is_err() const noexcept { return code != Code::Ok; }
+};
 
 }  // namespace coven::io

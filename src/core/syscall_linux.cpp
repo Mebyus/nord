@@ -5,24 +5,24 @@ namespace coven::os::linux::syscall {
 extern "C" [[noreturn]] fn void coven_linux_syscall_exit(i32 code) noexcept;
 
 extern "C" fn void* coven_linux_syscall_mmap(uptr addr,
-                                              usz len,
+                                              uarch len,
                                               i32 prot,
                                               i32 flags,
                                               i32 fd,
                                               i32 offset) noexcept;
 
-extern "C" fn i32 coven_linux_syscall_munmap(uptr addr, usz len) noexcept;
+extern "C" fn i32 coven_linux_syscall_munmap(uptr addr, uarch len) noexcept;
 
 // First argument must be a null-terminated string with path to file
 extern "C" fn i32 coven_linux_syscall_open(const u8* path,
                                            u32 flags,
                                            u32 mode) noexcept;
 
-extern "C" fn i32 coven_linux_syscall_read(u32 fd, u8* buf, usz len) noexcept;
+extern "C" fn i32 coven_linux_syscall_read(u32 fd, u8* buf, uarch len) noexcept;
 
 extern "C" fn i32 coven_linux_syscall_write(u32 fd,
                                             const u8* buf,
-                                            usz len) noexcept;
+                                            uarch len) noexcept;
 
 extern "C" fn i32 coven_linux_syscall_close(u32 fd) noexcept;
 
@@ -79,6 +79,8 @@ struct CloneArgs {
 extern "C" fn i32 coven_linux_syscall_clone3(CloneArgs* args) noexcept;
 
 enum struct Error : u32 {
+  OK = 0,
+
   EPERM	       = 1,  // Operation not permitted
   ENOENT       = 2,  // No such file or directory
   ESRCH	       = 3,  // No such process
@@ -238,13 +240,13 @@ struct Result {
   Error err;
 
   // Create successful result with no carried success value
-  let constexpr Result() noexcept : val(0), err(0) {}
+  let constexpr Result() noexcept : val(0), err(Error::OK) {}
 
-  let constexpr Result(u32 val) noexcept : val(val), err(0) {}
+  let constexpr Result(u32 val) noexcept : val(val), err(Error::OK) {}
   let constexpr Result(Error err) noexcept : val(0), err(err) {}
 
-  method bool is_ok() const noexcept { return err == 0; }
-  method bool is_err() const noexcept { return err != 0; }
+  method bool is_ok() const noexcept { return err == Error::OK; }
+  method bool is_err() const noexcept { return err != Error::OK; }
 };
 
 fn [[noreturn]] inline void exit(i32 code) noexcept {
@@ -268,10 +270,6 @@ fn inline Result close(u32 fd) noexcept {
 
   const Error err = cast(Error, -r);
   return Result(err);
-}
-
-fn inline io::FileHandle create_file_handle(i32 fd) noexcept {
-  return io::OpenResult(cast(io::FileHandle, x));
 }
 
 enum struct OpenFlags {
@@ -591,7 +589,7 @@ fn inline Result open(const u8* path, u32 flags, u32 mode) noexcept {
       //  EISDIR fd refers to a directory.
 
       //  Other errors may occur, depending on the object connected to fd.
-fn inline Result read(u32 fd, u8* buf, usz len) noexcept {
+fn inline Result read(u32 fd, u8* buf, uarch len) noexcept {
   const i32 r = coven_linux_syscall_read(fd, buf, len);
   if (r >= 0) {
     // return number of bytes read
@@ -602,7 +600,7 @@ fn inline Result read(u32 fd, u8* buf, usz len) noexcept {
   return Result(err);
 }
 
-fn inline Result write(u32 fd, const u8* buf, usz len) noexcept {
+fn inline Result write(u32 fd, const u8* buf, uarch len) noexcept {
   const i32 r = coven_linux_syscall_write(fd, buf, len);
   if (r >= 0) {
     // return number of bytes written
@@ -637,7 +635,7 @@ fn inline Result write(u32 fd, const u8* buf, usz len) noexcept {
 //  ENOTDIR
 //         pathname is relative and dirfd is a file descriptor referring to a file other than a directory.
 fn inline Result mkdir(const u8* path, u32 mode) noexcept {
-  const i32 r = coven_linux_syscall_mkdir(fd);
+  const i32 r = coven_linux_syscall_mkdir(path, mode);
   if (r == 0) {
     // mkdir was successful
     return Result();

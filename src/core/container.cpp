@@ -34,7 +34,7 @@ struct FlatMap {
     u64 hash;
 
     // key length of stored item
-    usz len;
+    uarch len;
 
     Item item;
   };
@@ -47,13 +47,13 @@ struct FlatMap {
   u64 seed;
 
   // number of elements stored in map
-  usz len;
+  uarch len;
 
   // minimal length of key stored in map
-  usz min_key_len;
+  uarch min_key_len;
 
   // maximum length of key stored in map
-  usz max_key_len;
+  uarch max_key_len;
 
   let FlatMap() noexcept
       : entries(chunk<Entry>()),
@@ -63,7 +63,7 @@ struct FlatMap {
         min_key_len(0),
         max_key_len(0) {}
 
-  let FlatMap(usz cap, u64 m, u64 s) noexcept
+  let FlatMap(uarch cap, u64 m, u64 s) noexcept
       : entries(chunk<Entry>(nil, cap)),
         mask(m),
         seed(s),
@@ -75,7 +75,7 @@ struct FlatMap {
   }
 
   method void init() noexcept {
-    const usz cap = entries.len;
+    const uarch cap = entries.len;
     entries = mem::calloc<Entry>(cap);
   }
 
@@ -87,14 +87,14 @@ struct FlatMap {
 
   method u64 hash(str key) noexcept { return hash::map::compute(seed, key); }
 
-  method usz determine_pos(u64 h) noexcept { return h & mask; }
+  method uarch determine_pos(u64 h) noexcept { return h & mask; }
 
   // Returns true if item was successfully added to map.
   // Returns false if corresponding cell was already
   // occupied in map
   method bool add(str key, T value) noexcept {
-    const usz h = hash(key);
-    const usz pos = determine_pos(h);
+    const uarch h = hash(key);
+    const uarch pos = determine_pos(h);
 
     const Entry entry = entries.ptr[pos];
 
@@ -130,8 +130,8 @@ struct FlatMap {
       return Item();
     }
 
-    const usz h = hash(key);
-    const usz pos = determine_pos(h);
+    const uarch h = hash(key);
+    const uarch pos = determine_pos(h);
     const Entry entry = entries.ptr[pos];
 
     if (!entry.item.ok || entry.len != key.len || entry.hash != h) {
@@ -160,7 +160,7 @@ struct FlatMap {
   // successfully added. In this case number of elements
   // actually stored inside a map is unpredictable
   fn bool populate(chunk<Pair> pairs) noexcept {
-    for (usz i = 0; i < pairs.len; i += 1) {
+    for (uarch i = 0; i < pairs.len; i += 1) {
       const Pair pair = pairs.ptr[i];
       const bool ok = add(pair);
 
@@ -177,11 +177,11 @@ struct FlatMap {
   method mc visualize(mc c) noexcept {
     var bb buf = bb(c);
 
-    const usz row_len = 64;
+    const uarch row_len = 64;
 
     var Entry* p = entries.ptr;
-    for (usz i = 0; i < entries.len / row_len; i += 1) {
-      for (usz j = 0; j < row_len; j += 1) {
+    for (uarch i = 0; i < entries.len / row_len; i += 1) {
+      for (uarch j = 0; j < row_len; j += 1) {
         const Entry entry = p[j];
 
         if (entry.item.ok) {
@@ -212,7 +212,7 @@ struct FlatMap {
 // greater than number of literals
 template <typename T>
 fn FlatMap<T> fit_into_flat_map(
-    usz cap,
+    uarch cap,
     u64 mask,
     chunk<typename FlatMap<T>::Pair> pairs) noexcept {
   //
@@ -240,14 +240,14 @@ struct CircularBuffer {
 
   // Buffer capacity i.e. maximum number of elements
   // it can hold
-  usz cap;
+  uarch cap;
 
   // Number of elements currently stored inside buffer
-  usz len;
+  uarch len;
 
   // Tip position. Next added element will be placed
   // inside with this offset
-  usz pos;
+  uarch pos;
 
   method void append(T elem) noexcept {
     ptr[pos] = elem;
@@ -269,12 +269,12 @@ struct CircularBuffer {
     must(len != 0);
 
     if (len <= pos) {
-      const usz i = pos - len;
+      const uarch i = pos - len;
       len -= 1;
       return ptr[i];
     }
 
-    const usz i = cap - len + pos;
+    const uarch i = cap - len + pos;
     len -= 1;
     return ptr[i];
   }

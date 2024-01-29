@@ -17,15 +17,15 @@ fn OpenResult open(str filename) noexcept {
     return OpenResult(OpenResult::Code::Error);
   }
 
-  return OpenResult(cast(FileHandle, fd));
+  return OpenResult(cast(Stream, fd));
 }
 
-fn CloseResult close(FileHandle fd) noexcept {
+fn CloseResult close(Stream fd) noexcept {
   ::close(cast(i32, fd));
   return CloseResult();
 }
 
-fn ReadResult read(FileHandle fd, mc c) noexcept {
+fn ReadResult read(Stream fd, mc c) noexcept {
   var isz n = ::read(cast(i32, fd), c.ptr, c.len);
   if (n < 0) {
     // TODO: add error handling
@@ -37,7 +37,7 @@ fn ReadResult read(FileHandle fd, mc c) noexcept {
   return ReadResult(cast(usz, n));
 }
 
-fn WriteResult write(FileHandle fd, mc c) noexcept {
+fn WriteResult write(Stream fd, mc c) noexcept {
   var isz n = ::write(cast(i32, fd), c.ptr, c.len);
   if (n < 0) {
     // TODO: add error handling
