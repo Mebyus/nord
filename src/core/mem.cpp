@@ -1,3 +1,23 @@
+namespace coven::os {
+
+// Allocates (maps) at least n bytes of virtual memory in whole pages
+//
+// Length of returned memory chunk is always a multiple of
+// memory page size and not smaller than argument n. Memory
+// is requested directly from OS, that is each call to this
+// function will translate to system call without any internal
+// buffering
+//
+// Returns nil chunk if OS returns an error while allocating
+// a requested amount of memory
+fn mc alloc(uarch n) noexcept;
+
+// Free (unmap) memory chunk that was received from alloc
+// function
+fn void free(mc c) noexcept;
+
+} // namespace coven::os
+
 namespace coven::mem {
 
 fn void copy(u8* restrict src, u8* restrict dst, uarch n) noexcept {
@@ -69,6 +89,47 @@ struct Arena {
     return buf.slice(prev, pos);
   }
 
+  template <typename T>
+  method chunk<T> alloc(uarch n) noexcept {
+    static_assert(sizeof(T) != 0);
+
+    const mc c = alloc(chunk_size(T, n));
+
+    return chunk<T>(cast(T*, c.ptr), c.len / sizeof(T));
+  }
+
+  method mc calloc(uarch n) noexcept {
+    var mc c = alloc(n);
+    c.clear();
+    return c;
+  }
+
+  template <typename T>
+  method chunk<T> calloc(uarch n) noexcept {
+    static_assert(sizeof(T) != 0);
+
+    const mc c = calloc(chunk_size(T, n));
+
+    return chunk<T>(cast(T*, c.ptr), c.len / sizeof(T));
+  }
+
+  method mc realloc(mc c, uarch n) noexcept {
+    must(n > c.len);
+
+    var mc c2 = alloc(n);
+    c2.unsafe_write(c);
+    return c2;
+  }
+
+  template <typename T>
+  method chunk<T> realloc(chunk<T> c, uarch n) noexcept {
+    static_assert(sizeof(T) != 0);
+
+    const mc c2 = realloc(c.as_mc(), chunk_size(T, n));
+
+    return chunk<T>(cast(T*, c2.ptr), c2.len / sizeof(T));
+  }
+
   // Allocate a non-overlapping copy of given memory chunk.
   // In contrast with alloc method returned chunk will be
   // of exactly the same length as original one
@@ -102,5 +163,48 @@ struct Arena {
   // available for future allocations
   method void reset() noexcept { pos = 0; }
 };
+
+internal const uarch global_arena_size = 1 << 26;
+internal const uarch todo_static_arena_size = 1 << 14;
+var global u8 todo_static_arena_buffer[todo_static_arena_size];
+var global Arena arena = Arena(mc(todo_static_arena_buffer, todo_static_arena_size));
+
+fn mc alloc(uarch n) noexcept {
+  return arena.alloc(n);
+}
+
+template <typename T>
+fn chunk<T> alloc(uarch n) noexcept {
+  return arena.alloc<T>(n);
+}
+
+fn mc calloc(uarch n) noexcept {
+  return arena.calloc(n);
+}
+
+template <typename T>
+fn chunk<T> calloc(uarch n) noexcept {
+  return arena.calloc<T>(n);
+}
+
+fn mc realloc(mc c, uarch n) noexcept {
+  return arena.realloc(c, n);
+}
+
+template <typename T>
+fn chunk<T> realloc(chunk<T> c, uarch n) noexcept {
+  return arena.realloc<T>(c, n);
+}
+
+fn void free(mc c) noexcept {
+  dummy_usage(c);
+  // arena.free(c);
+}
+
+template <typename T>
+fn void free(chunk<T> c) noexcept {
+  dummy_usage(c);
+  // arena.free<T>(c);
+}
 
 } // namespace coven::mem

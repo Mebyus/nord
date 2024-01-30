@@ -175,7 +175,7 @@ struct FlatMap {
   // print empty and occupied elements to buffer
   // in illustrative way
   method mc visualize(mc c) noexcept {
-    var bb buf = bb(c);
+    var fmt::Buffer buf = fmt::Buffer(c);
 
     const uarch row_len = 64;
 

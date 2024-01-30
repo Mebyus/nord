@@ -105,7 +105,9 @@
                             "core/chunk.cpp",
                             "core/cmp.cpp",
                             "core/bits.cpp",
+                            "core/hash.cpp",
                             "core/mem.cpp",
+                            "core/dyn.cpp",
                             "core/fmt.cpp",
                             "core/container.cpp",
                             "core/io.cpp",
@@ -117,6 +119,49 @@
                             "flat_fit.cpp"
                         ],
                         "ext_headers": []
+                    },
+                    {
+                        "name": "platform",
+                        "kind": "asm",
+                        "parts": [
+                            "core/syscall_linux_amd64.s"
+                        ]
+                    }
+                ]
+            }
+        ]
+    },
+    {
+        "name": "type_inspect",
+        "kind": "executable",
+        "recipes": [
+            {
+                "target": {
+                    "os": "linux",
+                    "arch": "amd64"
+                },
+                "objects": [
+                    {
+                        "name": "main",
+                        "kind": "c++",
+                        "parts": [
+                            "core/prelude.cpp",
+                            "core/chunk.cpp",
+                            "core/cmp.cpp",
+                            "core/bits.cpp",
+                            "core/hash.cpp",
+                            "core/mem.cpp",
+                            "core/dyn.cpp",
+                            "core/fmt.cpp",
+                            "core/container.cpp",
+                            "core/io.cpp",
+                            "core/bufio.cpp",
+                            "core/syscall_linux.cpp",
+                            "core/os.cpp",
+                            "core/os_linux.cpp",
+                            "core/debug.cpp",
+                            "type_inspect.cpp"
+                        ]
                     },
                     {
                         "name": "platform",

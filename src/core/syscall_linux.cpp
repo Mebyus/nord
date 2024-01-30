@@ -29,15 +29,65 @@ extern "C" fn i32 coven_linux_syscall_close(u32 fd) noexcept;
 // First argument must be a null-terminated string with path to file
 extern "C" fn i32 coven_linux_syscall_mkdir(const u8* path, u32 mode) noexcept;
 
-struct KernelTimespec {
+struct Timespec {
   i64 sec;
   i64 nano;
 };
 
+struct Stat {
+  // ID of device containing file
+  u64 device;
+
+  // Inode number
+  u64 inode;
+
+  // Number of hard links
+  u64 num_links;
+
+  // File type and mode
+  u32 mode;
+
+  // User ID of owner
+  u32 user_id;
+
+  // Group ID of owner
+  u32 group_id;
+
+  // This field is placed here purely for padding. It does not
+  // carry any useful information
+  u32 padding;
+
+  // Device ID (if special file)
+  u64 r_device;
+
+  // Total size in bytes
+  u64 size;
+
+  // Block size for filesystem I/O
+  u64 block_size;
+
+  // Number of 512B blocks allocated
+  u64 num_blocks;
+
+  // Time of last access
+  Timespec access_time;
+
+  // Time of last modification
+  Timespec mod_time;
+
+  // Time of last status change
+  Timespec status_change_time;
+
+  // Additional reserved fields for future compatibility
+  u64 reserved[3];
+};
+
+extern "C" fn i32 coven_linux_syscall_fstat(u32 fd, Stat *stat) noexcept;
+
 extern "C" fn i32 coven_linux_syscall_futex(u32* addr,
                                             i32 op,
                                             u32 val,
-                                            const KernelTimespec* timeout,
+                                            const Timespec* timeout,
                                             u32* addr2,
                                             u32 val3) noexcept;
 

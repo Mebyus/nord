@@ -591,13 +591,6 @@ struct Buffer {
     return n;
   }
 
-  // overload for convenient usage with sizeof() results
-  method uarch dec(unsigned long int x) noexcept {
-    const uarch n = fmt::dec(tail(), cast(u32, x));
-    len += n;
-    return n;
-  }
-
   method uarch dec(u16 x) noexcept {
     const uarch n = fmt::dec(tail(), x);
     len += n;

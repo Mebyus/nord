@@ -20,6 +20,13 @@ coredump*
 *.temp
 *.test
 
+# local sandbox code
+/*.cpp
+/*.hpp
+/*.cc
+/*.h
+/*.c
+
 *.log
 *.gz
 *.tar

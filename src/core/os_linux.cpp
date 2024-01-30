@@ -164,9 +164,50 @@ fn io::ReadResult read(FileDescriptor fd, mc buf) noexcept {
   return io::ReadResult(dispatch_read_error(r.err));
 }
 
+fn inline io::WriteResult::Code dispatch_write_error(syscall::Error err) noexcept {
+  switch (err) {
+    case syscall::Error::OK: {
+      crash();
+    }
+    case syscall::Error::EAGAIN:
+    case syscall::Error::EBADF:
+    case syscall::Error::EFAULT:
+    case syscall::Error::EINVAL:
+    case syscall::Error::EIO:
+    case syscall::Error::EISDIR:
+  default:
+    // Unknown error code
+    return io::WriteResult::Code::Error;
+  }
+}
+
+fn io::WriteResult write(FileDescriptor fd, mc buf) noexcept {
+  // TODO: check too large buffer size (at most 0x7ffff000)
+  var syscall::Result r dirty;
+  do {
+    r = syscall::write(cast(u32, fd.val), buf.ptr, buf.len);
+  } while (r.err == syscall::Error::EINTR);
+
+  if (r.is_ok()) {
+    return io::WriteResult(cast(uarch, r.val));
+  }
+
+  return io::WriteResult(dispatch_write_error(r.err));
+}
+
 }  // namespace coven::os::linux
 
 namespace coven::os {
+
+fn io::ReadResult read(FileStream stream, mc c) noexcept {
+  const linux::FileDescriptor fd = linux::FileDescriptor(stream.handle);
+  return linux::read(fd, c);
+}
+
+fn io::WriteResult write(FileStream stream, mc c) noexcept {
+  const linux::FileDescriptor fd = linux::FileDescriptor(stream.handle);
+  return linux::write(fd, c);
+}
 
 fn internal inline FileStream convert_to_file_stream(linux::FileDescriptor fd) noexcept {
   return FileStream(fd.val);
@@ -267,6 +308,57 @@ fn OpenResult create(str path) noexcept {
   var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
 
   return convert_to_open_result(linux::create(path_as_cstr));
+}
+
+// Read entire file and return its contents as raw bytes
+//
+// Memory allocations are performed via supplied allocator
+template <typename A>
+fn FileReadResult read_file(A& alc, str path) noexcept {
+  
+}
+
+fn FileReadResult read_file(str path) noexcept {
+  const uarch path_buf_length = 1 << 14;
+  if (path.len >= path_buf_length) {
+    return FileReadResult(FileReadResult::Code::PathTooLong);
+  }
+
+  var u8 buf[path_buf_length] dirty;
+  var mc path_buf = mc(buf, path_buf_length);
+  var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
+
+  var struct stat s dirty;
+  const i32 rcode = stat(cast(char*, path.ptr), &s);
+  if (rcode < 0) {
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  const uarch size = s.st_size;
+  if (size == 0) {
+    // File is empty, nothing to read
+    return FileReadResult(mc());
+  }
+
+  const i32 fd = ::open(cast(char*, path.ptr), O_RDONLY);
+  if (fd < 0) {
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var mc data = mem::alloc(size);
+  if (data.is_nil()) {
+    close(fd);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  var ReadResult rr = read_all(fd, data);
+  close(fd);
+  if (rr.is_err() || rr.n == 0) {
+    mem::free(data);
+    return FileReadResult(FileReadResult::Code::Error);
+  }
+
+  return FileReadResult(data.slice_to(rr.n));
 }
 
 }  // namespace coven::os

@@ -1,13 +1,6 @@
 // Use only for comparison with pointer types
 #define nil 0
 
-#undef min
-#undef max
-#undef EOF
-#undef stdin
-#undef stdout
-#undef stderr
-
 // Modify function or constant to be bound to translation unit
 #define internal static
 
@@ -53,13 +46,13 @@ namespace coven {
 typedef unsigned char u8;
 typedef unsigned short int u16;
 typedef unsigned int u32;
-typedef unsigned long long int u64;
+typedef unsigned long int u64;
 typedef __uint128_t u128;
 
 typedef signed char i8;
 typedef signed short int i16;
 typedef signed int i32;
-typedef signed long long int i64;
+typedef signed long int i64;
 typedef __int128_t i128;
 
 typedef float f32;

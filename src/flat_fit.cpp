@@ -1,17 +1,17 @@
 namespace coven {
 
-typedef cont::FlatMap<usz>::Pair IndexedWord;
+typedef cont::FlatMap<uarch>::Pair IndexedWord;
 
 fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
   var DynBuffer<IndexedWord> buf = DynBuffer<IndexedWord>();
 
-  var usz n = 0;  // word number
-  var usz start = 0;
-  var usz i = 0;
+  var uarch n = 0;  // word number
+  var uarch start = 0;
+  var uarch i = 0;
   for (; i < text.len; i += 1) {
     const u8 c = text.ptr[i];
 
-    if (!text::is_simple_whitespace(c)) {
+    if (!fmt::is_simple_whitespace(c)) {
       continue;
     }
 
@@ -36,17 +36,17 @@ fn DynBuffer<IndexedWord> split_and_index_words(str text) noexcept {
 
 struct CapSeedPair {
   u64 seed;
-  usz cap;
+  uarch cap;
 
   bool ok;
 };
 
 fn CapSeedPair find_best_cap_and_seed(chunk<IndexedWord> words) noexcept {
-  var usz cap = words.len << 1;
+  var uarch cap = words.len << 1;
   cap = bits::upper_power_of_two(cast(u32, cap));
 
-  var container::FlatMap<usz> m =
-      container::fit_into_flat_map<usz>(cap, cap - 1, words);
+  var cont::FlatMap<uarch> m =
+      cont::fit_into_flat_map<uarch>(cap, cap - 1, words);
 
   if (m.len == 0) {
     return CapSeedPair{.seed = 0, .cap = 0, .ok = false};
@@ -57,12 +57,14 @@ fn CapSeedPair find_best_cap_and_seed(chunk<IndexedWord> words) noexcept {
 
 } // namespace coven
 
+using namespace coven;
+
 fn i32 main(i32 argc, u8** argv) noexcept {
   if (argc < 2) {
     return 1;
   }
-  var cstr filename = cstr(argv[1]);
-  var fs::FileReadResult rr = fs::read_file(filename.as_str());
+  const cstr filename = cstr(argv[1]);
+  var os::FileReadResult rr = os::read_file(filename.as_str());
   if (rr.is_err()) {
     return 1;
   }
