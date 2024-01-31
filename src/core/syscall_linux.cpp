@@ -4,12 +4,17 @@ namespace coven::os::linux::syscall {
 
 extern "C" [[noreturn]] fn void coven_linux_syscall_exit(i32 code) noexcept;
 
-extern "C" fn void* coven_linux_syscall_mmap(uptr addr,
+extern "C" fn uptr coven_linux_syscall_mmap(uptr addr,
                                               uarch len,
-                                              i32 prot,
-                                              i32 flags,
-                                              i32 fd,
+                                              u32 prot,
+                                              u32 flags,
+                                              u32 fd,
                                               i32 offset) noexcept;
+
+extern "C" fn uptr coven_linux_syscall_anon_mmap(uptr addr,
+                                              uarch len,
+                                              u32 prot,
+                                              u32 flags) noexcept;
 
 extern "C" fn i32 coven_linux_syscall_munmap(uptr addr, uarch len) noexcept;
 
@@ -279,7 +284,7 @@ enum struct Error : u32 {
 struct Result {
   // Value of positive system call outcome. Meaning of this value
   // depends on specific system call
-  u32 val;
+  u64 val;
 
   // Number which indicates what kind of error occured. Equals zero
   // if system call was successful
@@ -292,7 +297,7 @@ struct Result {
   // Create successful result with no carried success value
   let constexpr Result() noexcept : val(0), err(Error::OK) {}
 
-  let constexpr Result(u32 val) noexcept : val(val), err(Error::OK) {}
+  let constexpr Result(u64 val) noexcept : val(val), err(Error::OK) {}
   let constexpr Result(Error err) noexcept : val(0), err(err) {}
 
   method bool is_ok() const noexcept { return err == Error::OK; }
@@ -698,6 +703,62 @@ fn inline Result mkdir(const u8* path, u32 mode) noexcept {
 
   const Error err = cast(Error, -r);
   return Result(err);
+}
+
+// mmap errors
+//  EACCES A file descriptor refers to a non-regular file.  Or a file mapping was requested, but fd is not open for reading.  Or MAP_SHARED was requested
+//         and PROT_WRITE is set, but fd is not open in read/write (O_RDWR) mode.  Or PROT_WRITE is set, but the file is append-only.
+
+//  EAGAIN The file has been locked, or too much memory has been locked (see setrlimit(2)).
+
+//  EBADF  fd is not a valid file descriptor (and MAP_ANONYMOUS was not set).
+
+//  EEXIST MAP_FIXED_NOREPLACE was specified in flags, and the range covered by addr and length clashes with an existing mapping.
+
+//  EINVAL We don't like addr, length, or offset (e.g., they are too large, or not aligned on a page boundary).
+
+//  EINVAL (since Linux 2.6.12) length was 0.
+
+//  EINVAL flags contained none of MAP_PRIVATE, MAP_SHARED or MAP_SHARED_VALIDATE.
+
+//  ENFILE The system-wide limit on the total number of open files has been reached.
+
+//  ENODEV The underlying filesystem of the specified file does not support memory mapping.
+
+//  ENOMEM No memory is available.
+
+//  ENOMEM The  process's  maximum  number  of mappings would have been exceeded.  This error can also occur for munmap(), when unmapping a region in the
+//         middle of an existing mapping, since this results in two smaller mappings on either side of the region being unmapped.
+
+//  ENOMEM (since Linux 4.7) The process's RLIMIT_DATA limit, described in getrlimit(2), would have been exceeded.
+
+//  EOVERFLOW
+//         On 32-bit architecture together with the large file extension (i.e., using 64-bit off_t): the number of pages used for length plus  number  of
+//         pages used for offset would overflow unsigned long (32 bits).
+
+//  EPERM  The prot argument asks for PROT_EXEC but the mapped area belongs to a file on a filesystem that was mounted no-exec.
+
+//  EPERM  The operation was prevented by a file seal; see fcntl(2).
+
+//  ETXTBSY
+//         MAP_DENYWRITE was set but the object specified by fd is open for writing.
+
+
+const u32 PROT_READ = 0x1;
+const u32 PROT_WRITE = 0x2;
+
+const u32 MAP_SHARED = 0x01;
+const u32 MAP_ANONYMOUS = 0x20;
+
+fn inline Result anon_mmap(uptr addr, uarch len, u32 prot, u32 flags) noexcept {
+  const uptr r = coven_linux_syscall_anon_mmap(addr, len, prot, flags | MAP_ANONYMOUS);
+
+  const iarch error_check = -cast(iarch, r);
+  if (0 < error_check && error_check < 256) {
+    return Result(cast(Error, error_check));
+  }
+
+  return Result(r);
 }
 
 }  // namespace coven::os::linux::syscall

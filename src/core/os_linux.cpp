@@ -195,9 +195,65 @@ fn io::WriteResult write(FileDescriptor fd, mc buf) noexcept {
   return io::WriteResult(dispatch_write_error(r.err));
 }
 
+// Describes result of mmap system call (with implicit MAP_ANONYMOUS flag set)
+// in more friendly way than regular integer from raw syscall
+struct AnonMmapSyscallResult {
+  uptr addr;
+
+  AllocResult::Code code;
+
+  let AnonMmapSyscallResult(uptr addr) noexcept : addr(addr), code(AllocResult::Code::Ok) {}
+  let AnonMmapSyscallResult(AllocResult::Code code) noexcept : addr(0), code(code) {}
+
+  method bool is_ok() const noexcept { return code == AllocResult::Code::Ok; }
+  method bool is_err() const noexcept { return code != AllocResult::Code::Ok; }
+};
+
+fn inline AllocResult::Code dispatch_anon_mmap_error(syscall::Error err) noexcept {
+  switch (err) {
+    case syscall::Error::OK: {
+      crash();
+    }
+    case syscall::Error::EAGAIN:
+    case syscall::Error::EBADF:
+    case syscall::Error::EFAULT:
+    case syscall::Error::EINVAL:
+    case syscall::Error::EIO:
+    case syscall::Error::EISDIR:
+  default:
+    // Unknown error code
+    return AllocResult::Code::Error;
+  }
+}
+
+fn AnonMmapSyscallResult anon_mmap(uptr addr, uarch len, u32 prot, u32 flags) noexcept {
+  const syscall::Result r = syscall::anon_mmap(addr, len, prot, flags);
+
+  if (r.is_ok()) {
+    return AnonMmapSyscallResult(r.val);
+  }
+
+  return AnonMmapSyscallResult(dispatch_anon_mmap_error(r.err));
+}
+
+fn inline AnonMmapSyscallResult alloc(uarch len) noexcept {
+  return anon_mmap(0, len, syscall::PROT_READ | syscall::PROT_WRITE, syscall::MAP_SHARED);
+}
+
 }  // namespace coven::os::linux
 
 namespace coven::os {
+
+fn AllocResult alloc(uarch n) noexcept {
+  const uarch len = bits::align_by_4kb(n);
+  const linux::AnonMmapSyscallResult r = linux::alloc(len);
+  
+  if (r.is_ok()) {
+    return AllocResult(mc(cast(u8*, r.addr), len));
+  }
+
+  return AllocResult(r.code);
+}
 
 fn io::ReadResult read(FileStream stream, mc c) noexcept {
   const linux::FileDescriptor fd = linux::FileDescriptor(stream.handle);
@@ -313,52 +369,52 @@ fn OpenResult create(str path) noexcept {
 // Read entire file and return its contents as raw bytes
 //
 // Memory allocations are performed via supplied allocator
-template <typename A>
-fn FileReadResult read_file(A& alc, str path) noexcept {
+// template <typename A>
+// fn FileReadResult read_file(A& alc, str path) noexcept {
   
-}
+// }
 
-fn FileReadResult read_file(str path) noexcept {
-  const uarch path_buf_length = 1 << 14;
-  if (path.len >= path_buf_length) {
-    return FileReadResult(FileReadResult::Code::PathTooLong);
-  }
+// fn FileReadResult read_file(str path) noexcept {
+//   const uarch path_buf_length = 1 << 14;
+//   if (path.len >= path_buf_length) {
+//     return FileReadResult(FileReadResult::Code::PathTooLong);
+//   }
 
-  var u8 buf[path_buf_length] dirty;
-  var mc path_buf = mc(buf, path_buf_length);
-  var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
+//   var u8 buf[path_buf_length] dirty;
+//   var mc path_buf = mc(buf, path_buf_length);
+//   var cstr path_as_cstr = unsafe_copy_as_cstr(path, path_buf);
 
-  var struct stat s dirty;
-  const i32 rcode = stat(cast(char*, path.ptr), &s);
-  if (rcode < 0) {
-    return FileReadResult(FileReadResult::Code::Error);
-  }
+//   var struct stat s dirty;
+//   const i32 rcode = stat(cast(char*, path.ptr), &s);
+//   if (rcode < 0) {
+//     return FileReadResult(FileReadResult::Code::Error);
+//   }
 
-  const uarch size = s.st_size;
-  if (size == 0) {
-    // File is empty, nothing to read
-    return FileReadResult(mc());
-  }
+//   const uarch size = s.st_size;
+//   if (size == 0) {
+//     // File is empty, nothing to read
+//     return FileReadResult(mc());
+//   }
 
-  const i32 fd = ::open(cast(char*, path.ptr), O_RDONLY);
-  if (fd < 0) {
-    return FileReadResult(FileReadResult::Code::Error);
-  }
+//   const i32 fd = ::open(cast(char*, path.ptr), O_RDONLY);
+//   if (fd < 0) {
+//     return FileReadResult(FileReadResult::Code::Error);
+//   }
 
-  var mc data = mem::alloc(size);
-  if (data.is_nil()) {
-    close(fd);
-    return FileReadResult(FileReadResult::Code::Error);
-  }
+//   var mc data = mem::alloc(size);
+//   if (data.is_nil()) {
+//     close(fd);
+//     return FileReadResult(FileReadResult::Code::Error);
+//   }
 
-  var ReadResult rr = read_all(fd, data);
-  close(fd);
-  if (rr.is_err() || rr.n == 0) {
-    mem::free(data);
-    return FileReadResult(FileReadResult::Code::Error);
-  }
+//   var ReadResult rr = read_all(fd, data);
+//   close(fd);
+//   if (rr.is_err() || rr.n == 0) {
+//     mem::free(data);
+//     return FileReadResult(FileReadResult::Code::Error);
+//   }
 
-  return FileReadResult(data.slice_to(rr.n));
-}
+//   return FileReadResult(data.slice_to(rr.n));
+// }
 
 }  // namespace coven::os

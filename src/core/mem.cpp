@@ -1,5 +1,25 @@
 namespace coven::os {
 
+struct AllocResult {
+  enum struct Code : u8 {
+    Ok = 0,
+
+    // Generic error, no specifics known
+    Error,
+
+    NoMemoryAvailable,
+
+    TooManyMappings,
+  };
+
+  mc m;
+
+  Code code;
+
+  let AllocResult(mc m) noexcept : m(m), code(Code::Ok) {}
+  let AllocResult(Code code) noexcept : m(mc()), code(code) {}
+};
+
 // Allocates (maps) at least n bytes of virtual memory in whole pages
 //
 // Length of returned memory chunk is always a multiple of
@@ -10,11 +30,22 @@ namespace coven::os {
 //
 // Returns nil chunk if OS returns an error while allocating
 // a requested amount of memory
-fn mc alloc(uarch n) noexcept;
+fn AllocResult alloc(uarch n) noexcept;
+
+struct FreeResult {
+  enum struct Code : u8 {
+    Ok = 0,
+
+    // Generic error, no specifics known
+    Error,
+  };
+
+  Code code;
+};
 
 // Free (unmap) memory chunk that was received from alloc
 // function
-fn void free(mc c) noexcept;
+fn FreeResult free(mc c) noexcept;
 
 } // namespace coven::os
 
@@ -165,9 +196,7 @@ struct Arena {
 };
 
 internal const uarch global_arena_size = 1 << 26;
-internal const uarch todo_static_arena_size = 1 << 14;
-var global u8 todo_static_arena_buffer[todo_static_arena_size];
-var global Arena arena = Arena(mc(todo_static_arena_buffer, todo_static_arena_size));
+var global Arena arena = Arena(os::alloc(global_arena_size).m); // TODO: handle alloc error
 
 fn mc alloc(uarch n) noexcept {
   return arena.alloc(n);

@@ -1,9 +1,16 @@
-SYS_EXIT = 0x3C
+SYS_READ   = 0x00
+SYS_WRITE  = 0x01
+SYS_OPEN   = 0x02
+SYS_CLOSE  = 0x03
+SYS_MMAP   = 0x09
+SYS_MUNMAP = 0x0b
+SYS_EXIT   = 0x3c
 
 .section .text
 
 .global coven_linux_syscall_open
 .global coven_linux_syscall_exit
+.global coven_linux_syscall_anon_mmap
 .global coven_linux_syscall_mmap
 .global coven_linux_syscall_munmap
 .global coven_linux_syscall_read
@@ -59,7 +66,7 @@ coven_linux_syscall_open:
     //  [s]     => arg0 => rdi
     //  [flags] => arg1 => rsi
     //  [mode]  => arg2 => rdx
-    mov SYS_EXIT, %rax
+    mov $SYS_OPEN, %rax
     syscall
     ret
 
@@ -76,11 +83,38 @@ coven_linux_syscall_exit:
     // exit syscall number => 0x3C => rax
     //
     //  [code] => arg0 => rdi 
-	mov 	$0x3C, %rax 
+	mov $SYS_EXIT, %rax 
 	syscall
     // Ret instruction is not needed because exit terminates process execution
 
-// fn mmap(addr: uptr, len: usz, prot: i32, flags: i32, fd: i32, offset: i32) => anyptr
+// fn anon_mmap(addr: uptr, len: uarch, prot: u32, flags: u32) => uptr
+//
+//  [addr]   => rdi
+//  [len]    => rsi
+//  [prot]   => rdx
+//  [flags]  => rcx
+coven_linux_syscall_anon_mmap:
+    // All arguments except [flags] are already set in place for syscall
+    // by function calling convention
+    //
+    // Move flags argument into syscall arg3 register (r10)
+    mov %rcx, %r10
+
+    // mmap syscall number => 0x09 => rax
+    //
+    //  [addr]   => arg0 => rdi
+    //  [len]    => arg1 => rsi
+    //  [prot]   => arg2 => rdx
+    //  [flags]  => arg3 => r10
+    //  [fd]     => arg4 => r8   (ignored)
+    //  [offset] => arg5 => r9   (ignored)
+    xor %r8, %r8 /* set arg4 to 0 */
+    xor %r9, %r9 /* set arg5 to 0 */
+    mov $SYS_MMAP, %rax
+    syscall
+    ret
+
+// fn mmap(addr: uptr, len: uarch, prot: u32, flags: u32, fd: u32, offset: i32) => uptr
 //
 //  [addr]   => rdi
 //  [len]    => rsi
@@ -103,11 +137,11 @@ coven_linux_syscall_mmap:
     //  [flags]  => arg3 => r10
     //  [fd]     => arg4 => r8
     //  [offset] => arg5 => r9
-    mov $0x09, %rax
+    mov $SYS_MMAP, %rax
     syscall
     ret
 
-// fn munmap(ptr: uptr, len: usz) => i32
+// fn munmap(ptr: uptr, len: uarch) => i32
 //
 //  [addr]   => rdi
 //  [len]    => rsi
@@ -119,12 +153,11 @@ coven_linux_syscall_munmap:
     //
     //  [addr]   => arg0 => rdi
     //  [len]    => arg1 => rsi
-    mov $0x0B, %rax
+    mov $SYS_MUNMAP, %rax
     syscall
     ret
 
-
-// fn read(fd: u32, buf: *u8, len: usz) => i32
+// fn read(fd: u32, buf: *u8, len: uarch) => i32
 //
 //  [fd]  => rdi
 //  [buf] => rsi
@@ -144,7 +177,7 @@ coven_linux_syscall_read:
     syscall
     ret
 
-// fn write(fd: u32, buf: *u8, len: usz) => i32
+// fn write(fd: u32, buf: *u8, len: uarch) => i32
 coven_linux_syscall_write:
     // All arguments are already set in place for syscall by function
     // calling convention
@@ -154,7 +187,7 @@ coven_linux_syscall_write:
     //  [fd]  => arg0 => rdi
     //  [buf] => arg1 => rsi
     //  [len] => arg2 => rdx
-    mov $0x01, %rax
+    mov $SYS_WRITE, %rax
     syscall
     ret
 
@@ -166,6 +199,6 @@ coven_linux_syscall_close:
     // close syscall number => 0x03 => rax
     //
     //  [fd]  => arg0 => rdi
-    mov $0x03, %rax
+    mov $SYS_CLOSE, %rax
     syscall
     ret

@@ -58,8 +58,8 @@ fn internal inline constexpr uarch align_by_16(uarch x) noexcept {
 }
 
 fn internal inline constexpr uarch align_by_4kb(uarch x) noexcept {
-  var uarch a = x & 0x4FF;
-  a = ((~a) + 1) & 0x0F;
+  var uarch a = x & 0x3FF;
+  a = ((~a) + 1) & 0x3FF;
   return x + a;
 }
 
